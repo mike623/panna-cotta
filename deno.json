@@ -2,6 +2,7 @@
   "tasks": {
     "start:backend": "deno run  --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
     "start:backend:watch": "deno run --watch --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
-    "start:frontend": "echo 'Frontend is served by the backend.'"
+    "start:frontend": "echo 'Frontend is served by the backend.'",
+    "compile": "deno compile -A --include packages/frontend --output packages/backend/stream-backend packages/backend/server.ts"
   }
 }

@@ -370,14 +370,11 @@ stream-deck-web/
 # Install Deno
 curl -fsSL https://deno.land/install.sh | sh
 
-# Run the Deno application
-deno run --allow-net --allow-run --allow-read --allow-write packages/backend/server.ts
-
-# Or, run in watch mode for development
-deno run --watch --allow-net --allow-run --allow-read --allow-write packages/backend/server.ts
+# Run the Deno application using deno.json (includes --allow-all and --watch=static/)
+deno task start
 
 # Compile to a standalone executable
-deno compile --allow-net --allow-run --allow-read --allow-write --include packages/frontend --output packages/backend/stream-backend packages/backend/server.ts
+deno compile -A --include packages/frontend --output packages/backend/stream-backend packages/backend/server.ts
 
 # Run the compiled executable
 ./packages/backend/stream-backend
