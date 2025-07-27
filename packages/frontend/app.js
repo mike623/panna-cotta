@@ -13,7 +13,7 @@ class StreamDeckAPI {
   }
   
   async executeAction(action, target) {
-    const response = await fetch(`http://localhost:8000/api/execute`, {
+    const response = await fetch(`${this.baseUrl}/api/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, target })
@@ -22,7 +22,16 @@ class StreamDeckAPI {
   }
   
   async getSystemStatus() {
-    const response = await fetch(`http://localhost:8000/api/system-status`);
+    const response = await fetch(`${this.baseUrl}/api/system-status`);
+    return response.json();
+  }
+
+  async openUrl(url) {
+    const response = await fetch(`${this.baseUrl}/api/open-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
     return response.json();
   }
 
@@ -60,7 +69,7 @@ async function renderGrid() {
 
       button.addEventListener('click', () => {
         if (buttonConfig.type === 'browser') {
-          window.open(buttonConfig.action, '_blank');
+          api.openUrl(buttonConfig.action);
         } else if (buttonConfig.type === 'system') {
           api.executeAction('open-app', buttonConfig.action);
         }

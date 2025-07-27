@@ -145,7 +145,9 @@ body {
 }
 
 .grid-container {
+  display: -webkit-grid; /* For older Safari */
   display: grid;
+  -webkit-gap: 1rem;     /* For older Safari */
   gap: 1rem;
   padding: 1rem;
   height: 100vh;
@@ -154,8 +156,14 @@ body {
 .grid-button {
   background-color: #374151; /* gray-800 */
   border-radius: 0.5rem;
+  display: -webkit-box;    /* For older Safari */
+  display: -webkit-flex;   /* For older Safari */
   display: flex;
+  -webkit-box-align: center; /* For older Safari */
+  -webkit-align-items: center; /* For older Safari */
   align-items: center;
+  -webkit-box-pack: center;  /* For older Safari */
+  -webkit-justify-content: center; /* For older Safari */
   justify-content: center;
 }
 
@@ -169,15 +177,27 @@ body {
   left: 0;
   right: 0;
   background-color: #1f2937; /* gray-900 */
+  display: -webkit-box;    /* For older Safari */
+  display: -webkit-flex;   /* For older Safari */
   display: flex;
+  -webkit-box-align: center; /* For older Safari */
+  -webkit-align-items: center; /* For older Safari */
   align-items: center;
 }
 
 .toolbar-buttons {
+  -webkit-box-flex: 1;     /* For older Safari */
   flex-grow: 1;
+  display: -webkit-box;    /* For older Safari */
+  display: -webkit-flex;   /* For older Safari */
   display: flex;
+  -webkit-box-pack: center;  /* For older Safari */
+  -webkit-justify-content: center; /* For older Safari */
   justify-content: center;
+  -webkit-box-align: center; /* For older Safari */
+  -webkit-align-items: center; /* For older Safari */
   align-items: center;
+  -webkit-space-x: 0.5rem; /* Equivalent to Tailwind's space-x-2 */
   space-x: 0.5rem; /* Equivalent to Tailwind's space-x-2 */
   padding: 0.5rem;
 }

@@ -1,7 +1,7 @@
 import { serveDir, serveFile } from "jsr:@std/http/file-server";
 
 
-import { executeCommand, getSystemStatus, openApplication } from "./services/system.ts";
+import { executeCommand, getSystemStatus, openApplication, openUrl } from "./services/system.ts";
 import { useStreamDeckConfig } from "./services/config.ts";
 
 const frontendPath = new URL("../frontend", import.meta.url).pathname;
@@ -61,6 +61,8 @@ async function handler(req: Request): Promise<Response> {
       return getSystemStatus(req);
     } else if (path === "/api/open-app" && req.method === "POST") {
       return openApplication(req);
+    } else if (path === "/api/open-url" && req.method === "POST") {
+      return openUrl(req);
     } else if (path === "/api/health" && req.method === "GET") {
       return new Response("OK");
     } else if (path === "/api/config" && req.method === "GET") {

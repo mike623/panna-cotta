@@ -79,3 +79,20 @@ export const openApplication = async (req: Request): Promise<Response> => {
     return new Response(JSON.stringify({ success: false, message: `Server error: ${error.message}` }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 };
+
+export const openUrl = async (req: Request): Promise<Response> => {
+  try {
+    const { url } = await req.json();
+    const cmd = new Deno.Command("open", {
+      args: [url],
+    });
+    const output = await cmd.output();
+    if (!output.success) {
+      console.error(`Error opening URL: ${new TextDecoder().decode(output.stderr)}`);
+    }
+    return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+  } catch (error: any) {
+    console.error(`Error in openUrl: ${error.message}`);
+    return new Response(JSON.stringify({ success: false, message: `Server error: ${error.message}` }), { status: 500, headers: { "Content-Type": "application/json" } });
+  }
+};
