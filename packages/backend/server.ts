@@ -18,7 +18,7 @@ async function handler(req: Request): Promise<Response> {
     const interfaces = Deno.networkInterfaces();
     let localIp = "localhost";
     for (const iface of interfaces) {
-        if (iface.family === "IPv4" && !iface.internal) {
+        if (iface.family === "IPv4" && iface.address !== "127.0.0.1") {
           localIp = iface.address;
           break;
         }
