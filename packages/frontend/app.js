@@ -50,12 +50,12 @@ async function renderGrid() {
   for (let i = 0; i < totalCells; i++) {
     const buttonConfig = buttonsToShow[i];
     const button = document.createElement('div');
-    button.className = 'bg-gray-800 rounded-lg flex items-center justify-center';
+    button.className = 'grid-button';
 
     if (buttonConfig) {
       const icon = document.createElement('i');
       icon.setAttribute('data-lucide', buttonConfig.icon);
-      icon.className = 'text-white';
+      icon.className = 'button-icon';
       button.appendChild(icon);
 
       button.addEventListener('click', () => {
@@ -84,10 +84,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const mainToolbar = document.getElementById('main-toolbar');
 
   toggleThemeButton.addEventListener('click', () => {
-    document.body.classList.toggle('bg-black');
-    document.body.classList.toggle('bg-white');
+    document.body.classList.toggle('dark-mode');
+    document.body.classList.toggle('light-mode');
     const icon = toggleThemeButton.querySelector('i');
-    const isDarkMode = document.body.classList.contains('bg-black');
+    const isDarkMode = document.body.classList.contains('dark-mode');
     icon.setAttribute('data-lucide', isDarkMode ? 'sun' : 'moon');
     lucide.createIcons();
   });

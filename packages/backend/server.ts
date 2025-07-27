@@ -1,6 +1,4 @@
-import { serve } from "https://deno.land/std/http/server.ts";
-import { serveFile } from "https://deno.land/std/http/file_server.ts";
-import { join } from "https://deno.land/std/path/mod.ts";
+import { serveDir, serveFile } from "jsr:@std/http/file-server";
 
 
 import { executeCommand, getSystemStatus, openApplication } from "./services/system.ts";
@@ -72,17 +70,7 @@ async function handler(req: Request): Promise<Response> {
 
   // Serve frontend static files under /apps
   if (path.startsWith("/apps")) {
-    try {
-      const filePath = join(frontendPath, path.substring(5)); // Remove /apps from path
-      const file = await Deno.stat(filePath);
-      if (file.isFile) {
-        return serveFile(req, filePath);
-      } else if (file.isDirectory) {
-        return serveFile(req, join(filePath, "index.html"));
-      }
-    } catch (e) {
-      // File not found, continue to next handler or return 404
-    }
+    return serveDir(req, { fsRoot: frontendPath, urlRoot: "apps" });
   }
 
   // Fallback for unknown routes

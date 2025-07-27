@@ -1,3 +1,204 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+  The New CSS Reset - https://github.com/elad2412/the-new-css-reset
+*/
+
+/*
+  Remove all the styles of the "User-Agent-Stylesheet", except for the 'display' property
+  - The "display" property is re-applied for all the elements that have a "display: contents" or "display: none"
+  - Using the universal selector to reset the styling of all elements
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+*:where(:not(html, iframe, canvas, img, svg, video, audio):not(svg *, symbol *)) {
+  all: unset;
+  display: revert;
+}
+
+/* Preferred box-sizing value */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Reapply the pointer cursor for anchor tags */
+a, button {
+  cursor: revert;
+}
+
+/* Remove list styles (bullets/numbers) */
+ol, ul, menu {
+  list-style: none;
+}
+
+/* For images to be responsive */
+img {
+  max-width: 100%;
+}
+
+/*
+  Remove default styling for HTML elements that are hidden by the "hidden" attribute
+  - The "hidden" attribute is used to hide elements from the user
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where([hidden]) {
+  display: none;
+}
+
+/*
+  Revert the 'white-space' property for textarea elements on Safari
+  - Safari has a bug where textarea elements have a 'white-space: pre-wrap' by default
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+textarea {
+  white-space: revert;
+}
+
+/*
+  Minimum style to allow to style meter element
+  - The meter element has a default styling that makes it difficult to style
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+meter {
+  -webkit-appearance: revert;
+  appearance: revert;
+}
+
+/*
+  Preformatted text - use only for this feature
+  - The pre element has a default styling that makes it difficult to style
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where(pre) {
+  all: revert;
+  box-sizing: border-box;
+}
+
+/*
+  Reset default text opacity of input placeholder
+  - The placeholder text has a default opacity that makes it difficult to style
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+::placeholder {
+  color: unset;
+}
+
+/*
+  Fix the feature of 'hidden' attribute. display:revert; revert to element instead of attribute
+  - The hidden attribute has a bug where it does not revert to the element's display property
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where([hidden]) {
+  display: none;
+}
+
+/*
+  Revert for bug in Chromium browsers - fix for the content editable attribute will work properly.
+  - webkit-user-select: auto; added for Safari in case of using user-select:none on wrapper element
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where([contenteditable]:not([contenteditable="false"])) {
+  -moz-user-modify: read-write;
+  -webkit-user-modify: read-write;
+  overflow-wrap: break-word;
+  -webkit-line-break: after-white-space;
+  -webkit-user-select: auto;
+}
+
+/*
+  Apply back the draggable feature - exist only in Chromium and Safari
+  - The draggable attribute has a bug where it does not work properly in Chromium and Safari
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where([draggable="true"]) {
+  -webkit-user-drag: element;
+}
+
+/*
+  Revert Modal native behavior
+  - The dialog element has a default styling that makes it difficult to style
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+:where(dialog:modal) {
+  all: revert;
+  box-sizing: border-box;
+}
+
+/*
+  Remove details summary webkit styles
+  - The details summary element has a default styling that makes it difficult to style
+  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
+*/
+::-webkit-details-marker {
+  display: none;
+}
+body {
+  margin: 0;
+  font-family: sans-serif;
+}
+
+.dark-mode {
+  background-color: #000;
+}
+
+.light-mode {
+  background-color: #fff;
+}
+
+.grid-container {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  height: 100vh;
+}
+
+.grid-button {
+  background-color: #374151; /* gray-800 */
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.button-icon {
+  color: #fff;
+}
+
+.main-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: #1f2937; /* gray-900 */
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-buttons {
+  flex-grow: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  space-x: 0.5rem; /* Equivalent to Tailwind's space-x-2 */
+  padding: 0.5rem;
+}
+
+.toolbar-button {
+  background-color: #4b5563; /* gray-700 */
+  color: #fff;
+  border-radius: 9999px; /* rounded-full */
+  padding: 0.5rem;
+}
+
+.collapse-button {
+  margin-left: auto;
+}
+
+.expand-button {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+}
+
+.hidden {
+  display: none;
+}
