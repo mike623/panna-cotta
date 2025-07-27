@@ -365,6 +365,31 @@ stream-deck-web/
 
 ## Deployment and Setup
 
+### Release Process and Versioning
+
+This project follows a Gitflow-like branching model combined with [Semantic Versioning](https://semver.org/).
+
+**Branching Strategy:**
+-   `main`: Represents the stable, production-ready code. Releases are tagged from this branch.
+-   `develop`: Integration branch for ongoing development. New features are branched from here.
+-   `feature/*`: Branches for new features, branched from `develop`.
+-   `release/vX.Y.Z`: Branches created from `develop` when preparing a new release. Bug fixes specific to the release are applied here.
+-   `hotfix/vX.Y.Z`: Branches created from `main` for urgent production bug fixes.
+
+**Versioning:**
+We use Semantic Versioning (Major.Minor.Patch, e.g., `v1.0.0`, `v1.0.1`, `v2.0.0`).
+
+**Release Flow:**
+1.  When a release is ready, a `release/vX.Y.Z` branch is created from `develop`.
+2.  Once the `release/vX.Y.Z` branch is stable and tested, it is merged into `main`.
+3.  Immediately after merging into `main`, a **Git tag** with the version number (e.g., `v1.0.0`) is created on the `main` branch.
+4.  Pushing this Git tag (e.g., `git push origin v1.0.0`) will trigger the GitHub Actions workflow (`.github/workflows/deno_build.yml`) to:
+    -   Compile the Deno application for Windows, Linux, and macOS.
+    -   Upload the compiled executables as artifacts.
+    -   Create a draft GitHub Release with the corresponding tag and attach the executables.
+
+
+
 ### Backend Setup (Mac)
 ```bash
 # Install Deno
@@ -373,11 +398,8 @@ curl -fsSL https://deno.land/install.sh | sh
 # Run the Deno application using deno.json (includes --allow-all and --watch=static/)
 deno task start
 
-# Compile to a standalone executable
-deno compile -A --include packages/frontend --output packages/backend/stream-backend packages/backend/server.ts
-
-# Run the compiled executable
-./packages/backend/stream-backend
+# Compiled executables are generated and released via GitHub Actions when a new version tag is pushed.
+# See .github/workflows/deno_build.yml for details.
 
 # Server will run on http://YOUR_MAC_IP:8000
 ```
