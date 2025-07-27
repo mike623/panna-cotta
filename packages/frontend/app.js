@@ -1,11 +1,14 @@
 class StreamDeckAPI {
   constructor() {
-    this.ws = new WebSocket('ws://localhost:8000/ws');
+    const backendHost = window.location.host;
+    this.baseUrl = `http://${backendHost}`;
+    this.wsUrl = `ws://${backendHost}`;
+    this.ws = new WebSocket(`${this.wsUrl}/ws`);
     this.setupEventHandlers();
   }
 
   async getConfig() {
-    const response = await fetch(`http://localhost:8000/api/config`);
+    const response = await fetch(`${this.baseUrl}/api/config`);
     return response.json();
   }
   

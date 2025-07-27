@@ -30,13 +30,19 @@ const defaultConfig: StreamDeckConfig = {
 };
 
 export async function useStreamDeckConfig() {
-  const root = new URL('../../', import.meta.url).pathname;
-  const { config } = await loadConfig<StreamDeckConfig>({
+  const homeDir = Deno.env.get("HOME");
+  const { config, configFile } = await loadConfig<StreamDeckConfig>({
     name: "stream-deck",
     defaultConfig,
     rcFile: "stream-deck.config.toml",
-    // cwd: root,
+    cwd: homeDir,
   });
+
+  if (configFile) {
+    console.log(`Loading configuration from: ${configFile}`);
+  } else {
+    console.log("Using default configuration.");
+  }
 
   const parsedConfig = configSchema.safeParse(config);
 
