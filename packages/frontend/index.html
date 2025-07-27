@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stream Deck</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-black">
+  <div id="grid-container" class="grid gap-4 p-4 h-screen"></div>
+
+  <div id="main-toolbar" class="fixed bottom-0 left-0 right-0 bg-gray-900 flex items-center hidden">
+    <div id="toolbar-buttons" class="flex-grow flex justify-center items-center space-x-2 p-2">
+      <button id="prev-page" class="bg-gray-700 text-white rounded-full p-2">
+        <i data-lucide="arrow-left"></i>
+      </button>
+      <button id="toggle-theme" class="bg-gray-700 text-white rounded-full p-2">
+        <i data-lucide="sun"></i>
+      </button>
+      <button id="next-page" class="bg-gray-700 text-white rounded-full p-2">
+        <i data-lucide="arrow-right"></i>
+      </button>
+    </div>
+    <button id="collapse-toolbar" class="bg-gray-700 text-white rounded-full p-2 ml-auto">
+      <i data-lucide="chevron-down"></i>
+    </button>
+  </div>
+
+  <button id="expand-toolbar" class="fixed bottom-4 right-4 bg-gray-700 text-white rounded-full p-2">
+    <i data-lucide="chevron-up"></i>
+  </button>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "start:backend": "deno run  --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
+    "start:backend:watch": "deno run --watch --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
+    "start:frontend": "echo 'Frontend is served by the backend.'"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "tasks": {
+    "start": "deno run -A --watch=static/ server.ts"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx"
+  },
+  "imports": {
+    "hono": "https://deno.land/x/hono@v4.2.8/mod.ts",
+    "zod": "https://deno.land/x/zod@v3.22.4/mod.ts",
+    "c12": "npm:c12@1.10.0"
+  }
+}

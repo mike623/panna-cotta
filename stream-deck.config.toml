@@ -1,0 +1,51 @@
+[grid]
+rows = 2
+cols = 3
+
+[[buttons]]
+name = "GitHub"
+type = "browser"
+icon = "github"
+action = "https://github.com"
+
+[[buttons]]
+name = "VS Code"
+type = "system"
+icon = "code"
+action = "Visual Studio Code"
+
+[[buttons]]
+name = "YouTube"
+type = "browser"
+icon = "youtube"
+action = "https://youtube.com"
+
+[[buttons]]
+name = "Twitch"
+type = "browser"
+icon = "twitch"
+action = "https://twitch.tv"
+
+[[buttons]]
+name = "Reddit"
+type = "browser"
+icon = "reddit"
+action = "https://reddit.com"
+
+[[buttons]]
+name = "Gmail"
+type = "browser"
+icon = "mail"
+action = "https://gmail.com"
+
+[[buttons]]
+name = "Discord"
+type = "system"
+icon = "message-square"
+action = "Discord"
+
+[[buttons]]
+name = "Spotify"
+type = "system"
+icon = "spotify"
+action = "Spotify"
