@@ -630,6 +630,8 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@1",
+      "jsr:@std/http@1",
       "npm:c12@1.10.0"
     ]
   }

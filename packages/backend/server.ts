@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { serveDir } from "jsr:@std/http/file-server";
+import { serveDir } from "@std/http/file-server";
 import {
   executeCommand,
   getSystemStatus,

@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { Hono } from "hono";
 
 // Test that a minimal Hono app works with our route structure

@@ -1,5 +1,7 @@
 {
   "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.0",
+    "@std/http": "jsr:@std/http@^1.0.0",
     "hono": "https://deno.land/x/hono@v4.2.8/mod.ts",
     "hono/cors": "https://deno.land/x/hono@v4.2.8/middleware/cors/index.ts",
     "hono/logger": "https://deno.land/x/hono@v4.2.8/middleware/logger/index.ts",
