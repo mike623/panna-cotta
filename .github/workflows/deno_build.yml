@@ -3,6 +3,7 @@ name: Deno Build and Release
 on:
   push:
     branches:
+      - main
       - "release/*"
     tags:
       - "v*"
