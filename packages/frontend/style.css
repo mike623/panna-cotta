@@ -1,174 +1,69 @@
-/*
-  The New CSS Reset - https://github.com/elad2412/the-new-css-reset
-*/
-
-/*
-  Remove all the styles of the "User-Agent-Stylesheet", except for the 'display' property
-  - The "display" property is re-applied for all the elements that have a "display: contents" or "display: none"
-  - Using the universal selector to reset the styling of all elements
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-*:where(:not(html, iframe, canvas, img, svg, video, audio):not(svg *, symbol *)) {
-  all: unset;
-  display: revert;
-}
-
-/* Preferred box-sizing value */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-/* Reapply the pointer cursor for anchor tags */
-a, button {
-  cursor: revert;
-}
-
-/* Remove list styles (bullets/numbers) */
-ol, ul, menu {
-  list-style: none;
-}
-
-/* For images to be responsive */
-img {
-  max-width: 100%;
-}
-
-/*
-  Remove default styling for HTML elements that are hidden by the "hidden" attribute
-  - The "hidden" attribute is used to hide elements from the user
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where([hidden]) {
-  display: none;
-}
-
-/*
-  Revert the 'white-space' property for textarea elements on Safari
-  - Safari has a bug where textarea elements have a 'white-space: pre-wrap' by default
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-textarea {
-  white-space: revert;
-}
-
-/*
-  Minimum style to allow to style meter element
-  - The meter element has a default styling that makes it difficult to style
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-meter {
-  -webkit-appearance: revert;
-  appearance: revert;
-}
-
-/*
-  Preformatted text - use only for this feature
-  - The pre element has a default styling that makes it difficult to style
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where(pre) {
-  all: revert;
-  box-sizing: border-box;
-}
-
-/*
-  Reset default text opacity of input placeholder
-  - The placeholder text has a default opacity that makes it difficult to style
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-::placeholder {
-  color: unset;
-}
-
-/*
-  Fix the feature of 'hidden' attribute. display:revert; revert to element instead of attribute
-  - The hidden attribute has a bug where it does not revert to the element's display property
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where([hidden]) {
-  display: none;
-}
-
-/*
-  Revert for bug in Chromium browsers - fix for the content editable attribute will work properly.
-  - webkit-user-select: auto; added for Safari in case of using user-select:none on wrapper element
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where([contenteditable]:not([contenteditable="false"])) {
-  -moz-user-modify: read-write;
-  -webkit-user-modify: read-write;
-  overflow-wrap: break-word;
-  -webkit-line-break: after-white-space;
-  -webkit-user-select: auto;
-}
-
-/*
-  Apply back the draggable feature - exist only in Chromium and Safari
-  - The draggable attribute has a bug where it does not work properly in Chromium and Safari
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where([draggable="true"]) {
-  -webkit-user-drag: element;
-}
-
-/*
-  Revert Modal native behavior
-  - The dialog element has a default styling that makes it difficult to style
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-:where(dialog:modal) {
-  all: revert;
-  box-sizing: border-box;
-}
-
-/*
-  Remove details summary webkit styles
-  - The details summary element has a default styling that makes it difficult to style
-  - Source: https://github.com/elad2412/the-new-css-reset/blob/main/css/reset.css
-*/
-::-webkit-details-marker {
-  display: none;
-}
-body {
-  margin: 0;
-  font-family: sans-serif;
+:root {
+  --bg-color: #f3f4f6;
+  --text-color: #111827;
+  --button-bg: #e5e7eb;
+  --button-border: 1px solid #d1d5db;
+  --toolbar-bg: #e5e7eb;
+  --icon-color: #111827;
 }
 
 .dark-mode {
-  background-color: #000;
+  --bg-color: #000;
+  --text-color: #fff;
+  --button-bg: #374151;
+  --button-border: none;
+  --toolbar-bg: #1f2937;
+  --icon-color: #fff;
 }
 
 .light-mode {
-  background-color: #fff;
+  --bg-color: #f3f4f6;
+  --text-color: #111827;
+  --button-bg: #e5e7eb;
+  --button-border: 1px solid #d1d5db;
+  --toolbar-bg: #e5e7eb;
+  --icon-color: #111827;
+}
+
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
 
 .grid-container {
-  display: -webkit-grid; /* For older Safari */
   display: grid;
-  -webkit-gap: 1rem;     /* For older Safari */
   gap: 1rem;
   padding: 1rem;
   height: 100vh;
 }
 
 .grid-button {
-  background-color: #374151; /* gray-800 */
+  background-color: var(--button-bg);
+  border: var(--button-border);
   border-radius: 0.5rem;
-  display: -webkit-box;    /* For older Safari */
-  display: -webkit-flex;   /* For older Safari */
   display: flex;
-  -webkit-box-align: center; /* For older Safari */
-  -webkit-align-items: center; /* For older Safari */
   align-items: center;
-  -webkit-box-pack: center;  /* For older Safari */
-  -webkit-justify-content: center; /* For older Safari */
   justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.grid-button:active {
+  transform: scale(0.95);
 }
 
 .button-icon {
-  color: #fff;
+  color: var(--icon-color);
+}
+
+.button-label {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  text-align: center;
+  opacity: 0.8;
 }
 
 .main-toolbar {
@@ -176,37 +71,33 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: #1f2937; /* gray-900 */
-  display: -webkit-box;    /* For older Safari */
-  display: -webkit-flex;   /* For older Safari */
+  background-color: var(--toolbar-bg);
   display: flex;
-  -webkit-box-align: center; /* For older Safari */
-  -webkit-align-items: center; /* For older Safari */
   align-items: center;
 }
 
 .toolbar-buttons {
-  -webkit-box-flex: 1;     /* For older Safari */
   flex-grow: 1;
-  display: -webkit-box;    /* For older Safari */
-  display: -webkit-flex;   /* For older Safari */
   display: flex;
-  -webkit-box-pack: center;  /* For older Safari */
-  -webkit-justify-content: center; /* For older Safari */
   justify-content: center;
-  -webkit-box-align: center; /* For older Safari */
-  -webkit-align-items: center; /* For older Safari */
   align-items: center;
-  -webkit-space-x: 0.5rem; /* Equivalent to Tailwind's space-x-2 */
-  space-x: 0.5rem; /* Equivalent to Tailwind's space-x-2 */
+  gap: 0.5rem;
   padding: 0.5rem;
 }
 
 .toolbar-button {
-  background-color: #4b5563; /* gray-700 */
-  color: #fff;
-  border-radius: 9999px; /* rounded-full */
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  border-radius: 9999px;
   padding: 0.5rem;
+}
+
+.page-indicator {
+  font-size: 0.75rem;
+  color: var(--text-color);
+  opacity: 0.6;
+  min-width: 2rem;
+  text-align: center;
 }
 
 .collapse-button {
@@ -221,4 +112,16 @@ body {
 
 .hidden {
   display: none;
+}
+
+.button-loading {
+  opacity: 0.6;
+}
+
+.button-success {
+  background-color: rgba(34, 197, 94, 0.2);
+}
+
+.button-error {
+  background-color: rgba(239, 68, 68, 0.2);
 }
