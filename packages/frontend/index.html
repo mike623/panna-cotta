@@ -1,36 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stream Deck</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="bg-black">
-  <div id="grid-container" class="grid gap-4 p-4 h-screen"></div>
+  <head>
+    <meta charset="UTF-8">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    >
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>Stream Deck</title>
+    <link rel="manifest" href="/apps/manifest.json">
+    <link rel="icon" href="/apps/assets/favicon.ico">
+    <link rel="apple-touch-icon" href="/apps/assets/apple-touch-icon.png">
+    <link rel="stylesheet" href="/apps/reset.css">
+    <link rel="stylesheet" href="/apps/style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body class="dark-mode">
+    <div id="grid-container" class="grid-container"></div>
 
-  <div id="main-toolbar" class="fixed bottom-0 left-0 right-0 bg-gray-900 flex items-center hidden">
-    <div id="toolbar-buttons" class="flex-grow flex justify-center items-center space-x-2 p-2">
-      <button id="prev-page" class="bg-gray-700 text-white rounded-full p-2">
-        <i data-lucide="arrow-left"></i>
-      </button>
-      <button id="toggle-theme" class="bg-gray-700 text-white rounded-full p-2">
-        <i data-lucide="sun"></i>
-      </button>
-      <button id="next-page" class="bg-gray-700 text-white rounded-full p-2">
-        <i data-lucide="arrow-right"></i>
+    <div id="main-toolbar" class="main-toolbar hidden">
+      <div id="toolbar-buttons" class="toolbar-buttons">
+        <button id="prev-page" class="toolbar-button">
+          <i data-lucide="arrow-left"></i>
+        </button>
+        <span id="page-indicator" class="page-indicator"></span>
+        <button id="toggle-theme" class="toolbar-button">
+          <i data-lucide="sun"></i>
+        </button>
+        <button id="next-page" class="toolbar-button">
+          <i data-lucide="arrow-right"></i>
+        </button>
+      </div>
+      <button id="collapse-toolbar" class="toolbar-button collapse-button">
+        <i data-lucide="chevron-down"></i>
       </button>
     </div>
-    <button id="collapse-toolbar" class="bg-gray-700 text-white rounded-full p-2 ml-auto">
-      <i data-lucide="chevron-down"></i>
+
+    <button id="expand-toolbar" class="toolbar-button expand-button">
+      <i data-lucide="chevron-up"></i>
     </button>
-  </div>
 
-  <button id="expand-toolbar" class="fixed bottom-4 right-4 bg-gray-700 text-white rounded-full p-2">
-    <i data-lucide="chevron-up"></i>
-  </button>
-
-  <script src="/apps/app.js"></script>
-</body>
+    <script src="/apps/app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/apps/sw.js").catch((err) => {
+          console.warn("SW registration failed:", err);
+        });
+      }
+    </script>
+  </body>
 </html>

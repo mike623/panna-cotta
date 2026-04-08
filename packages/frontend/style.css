@@ -1,3 +1,127 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  --bg-color: #f3f4f6;
+  --text-color: #111827;
+  --button-bg: #e5e7eb;
+  --button-border: 1px solid #d1d5db;
+  --toolbar-bg: #e5e7eb;
+  --icon-color: #111827;
+}
+
+.dark-mode {
+  --bg-color: #000;
+  --text-color: #fff;
+  --button-bg: #374151;
+  --button-border: none;
+  --toolbar-bg: #1f2937;
+  --icon-color: #fff;
+}
+
+.light-mode {
+  --bg-color: #f3f4f6;
+  --text-color: #111827;
+  --button-bg: #e5e7eb;
+  --button-border: 1px solid #d1d5db;
+  --toolbar-bg: #e5e7eb;
+  --icon-color: #111827;
+}
+
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.grid-container {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  height: 100vh;
+}
+
+.grid-button {
+  background-color: var(--button-bg);
+  border: var(--button-border);
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.grid-button:active {
+  transform: scale(0.95);
+}
+
+.button-icon {
+  color: var(--icon-color);
+}
+
+.button-label {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.main-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: var(--toolbar-bg);
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-buttons {
+  flex-grow: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.toolbar-button {
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  border-radius: 9999px;
+  padding: 0.5rem;
+}
+
+.page-indicator {
+  font-size: 0.75rem;
+  color: var(--text-color);
+  opacity: 0.6;
+  min-width: 2rem;
+  text-align: center;
+}
+
+.collapse-button {
+  margin-left: auto;
+}
+
+.expand-button {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+}
+
+.hidden {
+  display: none;
+}
+
+.button-loading {
+  opacity: 0.6;
+}
+
+.button-success {
+  background-color: rgba(34, 197, 94, 0.2);
+}
+
+.button-error {
+  background-color: rgba(239, 68, 68, 0.2);
+}

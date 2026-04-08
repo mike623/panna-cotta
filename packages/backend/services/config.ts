@@ -24,19 +24,34 @@ const defaultConfig: StreamDeckConfig = {
     cols: 3,
   },
   buttons: [
-    { name: "Calculator", type: "system", icon: "calculator", action: "Calculator" },
-    { name: "Google", type: "browser", icon: "chrome", action: "https://google.com" },
-  ]
+    {
+      name: "Calculator",
+      type: "system",
+      icon: "calculator",
+      action: "Calculator",
+    },
+    {
+      name: "Google",
+      type: "browser",
+      icon: "chrome",
+      action: "https://google.com",
+    },
+  ],
 };
 
-export async function useStreamDeckConfig() {
-  const root = new URL('../../', import.meta.url).pathname;
-  const { config } = await loadConfig<StreamDeckConfig>({
+export async function useStreamDeckConfig(): Promise<StreamDeckConfig> {
+  const { config, configFile } = await loadConfig<StreamDeckConfig>({
     name: "stream-deck",
     defaultConfig,
     rcFile: "stream-deck.config.toml",
-    // cwd: root,
+    cwd: Deno.cwd(),
   });
+
+  if (configFile) {
+    console.log(`Loading configuration from: ${configFile}`);
+  } else {
+    console.log("Using default configuration.");
+  }
 
   const parsedConfig = configSchema.safeParse(config);
 
