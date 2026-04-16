@@ -59,7 +59,12 @@ Deno.test("PUT /api/config returns 200 for valid body", async () => {
 
   const validConfig = {
     grid: { rows: 2, cols: 3 },
-    buttons: [{ name: "X", type: "browser", icon: "globe", action: "https://x.com" }],
+    buttons: [{
+      name: "X",
+      type: "browser",
+      icon: "globe",
+      action: "https://x.com",
+    }],
   };
 
   const res = await app.request("/api/config", {
