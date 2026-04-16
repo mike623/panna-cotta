@@ -42,13 +42,16 @@ Deno.test("saveStreamDeckConfig writes valid TOML to file", async () => {
     ],
   };
 
-  await saveStreamDeckConfig(config, filePath);
+  try {
+    await saveStreamDeckConfig(config, filePath);
 
-  const content = await Deno.readTextFile(filePath);
-  assertEquals(content.includes("[grid]"), true);
-  assertEquals(content.includes("rows = 3"), true);
-  assertEquals(content.includes("cols = 4"), true);
-  assertEquals(content.includes('name = "Test"'), true);
-
-  await Deno.remove(tempDir, { recursive: true });
+    const content = await Deno.readTextFile(filePath);
+    assertEquals(content.includes("[grid]"), true);
+    assertEquals(content.includes("rows = 3"), true);
+    assertEquals(content.includes("cols = 4"), true);
+    assertEquals(content.includes('name = "Test"'), true);
+    assertEquals(content.includes("[[buttons]]"), true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
 });
