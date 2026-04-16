@@ -326,7 +326,7 @@ const PORT_FILE = `${
   Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE")
 }/.panna-cotta.port`;
 
-async function isPortFree(p: number): Promise<boolean> {
+function isPortFree(p: number): boolean {
   try {
     const listener = Deno.listen({ port: p });
     listener.close();
@@ -339,7 +339,7 @@ async function isPortFree(p: number): Promise<boolean> {
 async function resolvePort(): Promise<number> {
   try {
     const saved = parseInt(await Deno.readTextFile(PORT_FILE));
-    if (saved >= 30000 && saved < 40000 && await isPortFree(saved)) {
+    if (saved >= 30000 && saved < 40000 && isPortFree(saved)) {
       return saved;
     }
   } catch {
@@ -347,7 +347,7 @@ async function resolvePort(): Promise<number> {
   }
 
   for (let p = 30000; p < 40000; p++) {
-    if (await isPortFree(p)) {
+    if (isPortFree(p)) {
       await Deno.writeTextFile(PORT_FILE, String(p));
       return p;
     }
