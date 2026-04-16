@@ -59,6 +59,7 @@ app.get("/admin", (c) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Panna Cotta — Admin</title>
+  <meta name="color-scheme" content="dark">
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 1.5rem; }
@@ -149,12 +150,17 @@ app.get("/admin", (c) => {
     }
 
     async function loadConfig() {
-      const res = await fetch('/api/config');
-      const config = await res.json();
-      document.getElementById('grid-rows').value = config.grid.rows;
-      document.getElementById('grid-cols').value = config.grid.cols;
-      buttons = config.buttons || [];
-      renderButtons();
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) { showToast('Failed to load config', false); return; }
+        const config = await res.json();
+        document.getElementById('grid-rows').value = config.grid.rows;
+        document.getElementById('grid-cols').value = config.grid.cols;
+        buttons = config.buttons || [];
+        renderButtons();
+      } catch {
+        showToast('Network error', false);
+      }
     }
 
     function renderButtons() {
@@ -213,13 +219,10 @@ app.get("/admin", (c) => {
     }
 
     async function saveConfig() {
-      const config = {
-        grid: {
-          rows: parseInt(document.getElementById('grid-rows').value, 10),
-          cols: parseInt(document.getElementById('grid-cols').value, 10),
-        },
-        buttons,
-      };
+      const rows = parseInt(document.getElementById('grid-rows').value, 10);
+      const cols = parseInt(document.getElementById('grid-cols').value, 10);
+      if (isNaN(rows) || isNaN(cols)) { showToast('Rows and cols must be numbers', false); return; }
+      const config = { grid: { rows, cols }, buttons };
       try {
         const res = await fetch('/api/config', {
           method: 'PUT',
