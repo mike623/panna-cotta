@@ -11,8 +11,8 @@ const buttonSchema = z.object({
 
 export const configSchema = z.object({
   grid: z.object({
-    rows: z.number(),
-    cols: z.number(),
+    rows: z.number().int().min(1),
+    cols: z.number().int().min(1),
   }),
   buttons: z.array(buttonSchema).optional(),
 });

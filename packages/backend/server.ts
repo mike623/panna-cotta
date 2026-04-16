@@ -9,7 +9,11 @@ import {
   openApplication,
   openUrl,
 } from "./services/system.ts";
-import { saveStreamDeckConfig, useStreamDeckConfig, configSchema } from "./services/config.ts";
+import {
+  configSchema,
+  saveStreamDeckConfig,
+  useStreamDeckConfig,
+} from "./services/config.ts";
 
 const app = new Hono();
 
