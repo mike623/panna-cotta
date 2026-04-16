@@ -1,4 +1,4 @@
-const CACHE_NAME = "panna-cotta-v3";
+const CACHE_NAME = "panna-cotta-v4";
 const ASSETS = [
   "/apps/index.html",
   "/apps/reset.css",

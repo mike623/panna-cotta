@@ -22,6 +22,7 @@
     "jsr:@std/net@^1.0.4": "1.0.4",
     "jsr:@std/path@1": "1.1.1",
     "jsr:@std/path@^1.1.1": "1.1.1",
+    "jsr:@std/semver@1": "1.0.8",
     "jsr:@std/streams@^1.0.10": "1.0.10",
     "jsr:@std/toml@1": "1.0.11",
     "npm:c12@1.10.0": "1.10.0",
@@ -97,6 +98,9 @@
       "dependencies": [
         "jsr:@std/internal@^1.0.9"
       ]
+    },
+    "@std/semver@1.0.8": {
+      "integrity": "dc830e8b8b6a380c895d53fbfd1258dc253704ca57bbe1629ac65fd7830179b7"
     },
     "@std/streams@1.0.10": {
       "integrity": "75c0b1431873cd0d8b3d679015220204d36d3c7420d93b60acfc379eb0dc30af"
@@ -646,6 +650,7 @@
       "jsr:@std/assert@1",
       "jsr:@std/http@1",
       "jsr:@std/path@1",
+      "jsr:@std/semver@1",
       "jsr:@std/toml@1",
       "npm:c12@1.10.0"
     ]

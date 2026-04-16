@@ -15,6 +15,7 @@ import {
   saveStreamDeckConfig,
   useStreamDeckConfig,
 } from "./services/config.ts";
+import { CURRENT_VERSION, getVersionInfo } from "./services/version.ts";
 
 const app = new Hono();
 
@@ -29,6 +30,7 @@ app.get("/api/system-status", (c) => getSystemStatus(c.req.raw));
 app.post("/api/open-app", (c) => openApplication(c.req.raw));
 app.post("/api/open-url", (c) => openUrl(c.req.raw));
 app.get("/api/health", (c) => c.text("OK"));
+app.get("/api/version", async (c) => c.json(await getVersionInfo()));
 
 app.get("/api/config", async (c) => {
   const config = await useStreamDeckConfig();
@@ -308,6 +310,7 @@ app.get("/", (c) => {
     <img src="${qrCodeUrl}" alt="QR Code" width="200" height="200">
     <p>Or open: <a href="${appUrl}"><code>${appUrl}</code></a></p>
     <p style="margin-top:1.5rem;border-top:1px solid #2a2a3e;padding-top:1rem"><a href="/admin" style="color:#818cf8">⚙ Admin — edit config</a></p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;color:#666">v${CURRENT_VERSION}</p>
   </div>
 </body>
 </html>`);
