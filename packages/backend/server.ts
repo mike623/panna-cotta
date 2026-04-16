@@ -300,6 +300,7 @@ app.get("/", (c) => {
     <p>Scan the QR code with your phone to open the Stream Deck:</p>
     <img src="${qrCodeUrl}" alt="QR Code" width="200" height="200">
     <p>Or open: <a href="${appUrl}"><code>${appUrl}</code></a></p>
+    <p style="margin-top:1.5rem;border-top:1px solid #2a2a3e;padding-top:1rem"><a href="/admin" style="color:#818cf8">⚙ Admin — edit config</a></p>
   </div>
 </body>
 </html>`);
