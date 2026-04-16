@@ -316,6 +316,8 @@ app.get("/", (c) => {
 
 const frontendPath = new URL("../frontend", import.meta.url).pathname;
 
+app.get("/apps", (c) => c.redirect("/apps/"));
+
 app.get("/apps/*", (c) => {
   return serveDir(c.req.raw, { fsRoot: frontendPath, urlRoot: "apps" });
 });
