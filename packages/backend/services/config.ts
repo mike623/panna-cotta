@@ -9,7 +9,7 @@ const buttonSchema = z.object({
   action: z.string(),
 });
 
-const configSchema = z.object({
+export const configSchema = z.object({
   grid: z.object({
     rows: z.number(),
     cols: z.number(),

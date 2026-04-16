@@ -9,7 +9,7 @@ import {
   openApplication,
   openUrl,
 } from "./services/system.ts";
-import { useStreamDeckConfig } from "./services/config.ts";
+import { saveStreamDeckConfig, useStreamDeckConfig, configSchema } from "./services/config.ts";
 
 const app = new Hono();
 
@@ -28,6 +28,28 @@ app.get("/api/health", (c) => c.text("OK"));
 app.get("/api/config", async (c) => {
   const config = await useStreamDeckConfig();
   return c.json(config);
+});
+
+app.put("/api/config", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+
+  const parsed = configSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.message }, 400);
+  }
+
+  try {
+    await saveStreamDeckConfig(parsed.data);
+  } catch (err) {
+    return c.json({ error: `Failed to write config: ${String(err)}` }, 500);
+  }
+
+  return c.json({ ok: true, config: parsed.data });
 });
 
 // --- Config / landing page ---
