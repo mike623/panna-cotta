@@ -3,6 +3,7 @@ import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serveDir } from "@std/http/file-server";
+import { fromFileUrl } from "@std/path";
 import {
   executeCommand,
   getSystemStatus,
@@ -314,7 +315,7 @@ app.get("/", (c) => {
 
 // --- Static frontend files ---
 
-const frontendPath = new URL("../frontend", import.meta.url).pathname;
+const frontendPath = fromFileUrl(new URL("../frontend", import.meta.url));
 
 app.get("/apps", (c) => c.redirect("/apps/"));
 
