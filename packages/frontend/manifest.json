@@ -1,6 +1,9 @@
 {
   "name": "Stream Deck",
   "short_name": "StreamDeck",
+  "description": "A configurable stream deck for controlling your Mac from any device on the network.",
+  "lang": "en",
+  "scope": "/apps/",
   "start_url": "/apps/index.html",
   "display": "standalone",
   "background_color": "#000000",
@@ -20,7 +23,8 @@
     {
       "src": "/apps/assets/splash.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "screenshots": [
