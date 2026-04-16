@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serveDir } from "@std/http/file-server";
@@ -13,6 +14,7 @@ import { useStreamDeckConfig } from "./services/config.ts";
 const app = new Hono();
 
 app.use("*", logger());
+app.use("*", compress());
 app.use("/api/*", cors());
 
 // --- API routes ---

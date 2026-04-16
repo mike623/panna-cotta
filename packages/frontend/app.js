@@ -111,6 +111,9 @@ function updatePageIndicator() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  const savedTheme = localStorage.getItem("theme") || "dark";
+  document.body.className = savedTheme === "dark" ? "dark-mode" : "light-mode";
+
   try {
     config = await api.getConfig();
   } catch (err) {
@@ -129,12 +132,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   const expandToolbarButton = document.getElementById("expand-toolbar");
   const mainToolbar = document.getElementById("main-toolbar");
 
+  const icon = toggleThemeButton.querySelector("i");
+  icon.setAttribute("data-lucide", savedTheme === "dark" ? "sun" : "moon");
+  lucide.createIcons();
+
   toggleThemeButton.addEventListener("click", () => {
     document.body.classList.toggle("dark-mode");
     document.body.classList.toggle("light-mode");
-    const icon = toggleThemeButton.querySelector("i");
     const isDarkMode = document.body.classList.contains("dark-mode");
-    icon.setAttribute("data-lucide", isDarkMode ? "sun" : "moon");
+    localStorage.setItem("theme", isDarkMode ? "dark" : "light");
+    const themeIcon = toggleThemeButton.querySelector("i");
+    themeIcon.setAttribute("data-lucide", isDarkMode ? "sun" : "moon");
     lucide.createIcons();
   });
 

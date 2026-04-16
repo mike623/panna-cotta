@@ -36,7 +36,9 @@ body {
   display: grid;
   gap: 1rem;
   padding: 1rem;
+  padding-bottom: 4rem;
   height: 100vh;
+  height: 100dvh;
 }
 
 .grid-button {
