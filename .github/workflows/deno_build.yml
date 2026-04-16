@@ -29,7 +29,7 @@ jobs:
         working-directory: packages/backend
 
       - name: Test
-        run: deno test --allow-read --allow-env --allow-net --allow-run --allow-sys
+        run: deno test --allow-read --allow-write --allow-env --allow-net --allow-run --allow-sys
         working-directory: packages/backend
 
   build:
