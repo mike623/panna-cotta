@@ -38,7 +38,12 @@ Deno.test("saveStreamDeckConfig writes valid TOML to file", async () => {
   const config: StreamDeckConfig = {
     grid: { rows: 3, cols: 4 },
     buttons: [
-      { name: "Test", type: "browser", icon: "globe", action: "https://example.com" },
+      {
+        name: "Test",
+        type: "browser",
+        icon: "globe",
+        action: "https://example.com",
+      },
     ],
   };
 
