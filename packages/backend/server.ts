@@ -3,6 +3,7 @@ import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { serveDir } from "@std/http/file-server";
+import { fromFileUrl } from "@std/path";
 import {
   executeCommand,
   getSystemStatus,
@@ -46,7 +47,10 @@ app.put("/api/config", async (c) => {
 
   const parsed = configSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: "Invalid config", details: parsed.error.flatten() }, 400);
+    return c.json(
+      { error: "Invalid config", details: parsed.error.flatten() },
+      400,
+    );
   }
 
   try {
@@ -314,7 +318,9 @@ app.get("/", (c) => {
 
 // --- Static frontend files ---
 
-const frontendPath = new URL("../frontend", import.meta.url).pathname;
+const frontendPath = fromFileUrl(new URL("../frontend", import.meta.url));
+
+app.get("/apps", (c) => c.redirect("/apps/"));
 
 app.get("/apps/*", (c) => {
   return serveDir(c.req.raw, { fsRoot: frontendPath, urlRoot: "apps" });
@@ -326,7 +332,7 @@ const PORT_FILE = `${
   Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE")
 }/.panna-cotta.port`;
 
-async function isPortFree(p: number): Promise<boolean> {
+function isPortFree(p: number): boolean {
   try {
     const listener = Deno.listen({ port: p });
     listener.close();
@@ -339,7 +345,7 @@ async function isPortFree(p: number): Promise<boolean> {
 async function resolvePort(): Promise<number> {
   try {
     const saved = parseInt(await Deno.readTextFile(PORT_FILE));
-    if (saved >= 30000 && saved < 40000 && await isPortFree(saved)) {
+    if (saved >= 30000 && saved < 40000 && isPortFree(saved)) {
       return saved;
     }
   } catch {
@@ -347,7 +353,7 @@ async function resolvePort(): Promise<number> {
   }
 
   for (let p = 30000; p < 40000; p++) {
-    if (await isPortFree(p)) {
+    if (isPortFree(p)) {
       await Deno.writeTextFile(PORT_FILE, String(p));
       return p;
     }
