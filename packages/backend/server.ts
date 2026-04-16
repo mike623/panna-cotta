@@ -91,7 +91,9 @@ app.get("/apps/*", (c) => {
 
 // --- Start server ---
 
-const PORT_FILE = `${Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE")}/.panna-cotta.port`;
+const PORT_FILE = `${
+  Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE")
+}/.panna-cotta.port`;
 
 async function isPortFree(p: number): Promise<boolean> {
   try {
