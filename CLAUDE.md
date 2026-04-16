@@ -10,6 +10,7 @@
 - Never continuously check status after spawning a swarm — wait for results
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
+- ALWAYS consider cross-platform compatibility for any native OS function (file paths, env vars, process APIs, shell commands) — support macOS, Linux, and Windows unless explicitly told otherwise
 
 ## File Organization
 

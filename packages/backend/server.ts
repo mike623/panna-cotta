@@ -47,7 +47,6 @@ function getLocalIp(): string {
 }
 
 app.get("/", (c) => {
-  const port = parseInt(Deno.env.get("STREAM_DECK_PORT") || "8000");
   const localIp = getLocalIp();
   const appUrl = `http://${localIp}:${port}/apps`;
   const qrCodeUrl =
@@ -92,6 +91,38 @@ app.get("/apps/*", (c) => {
 
 // --- Start server ---
 
-const port = parseInt(Deno.env.get("STREAM_DECK_PORT") || "8000");
+const PORT_FILE = `${Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE")}/.panna-cotta.port`;
+
+async function isPortFree(p: number): Promise<boolean> {
+  try {
+    const listener = Deno.listen({ port: p });
+    listener.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePort(): Promise<number> {
+  try {
+    const saved = parseInt(await Deno.readTextFile(PORT_FILE));
+    if (saved >= 30000 && saved < 40000 && await isPortFree(saved)) {
+      return saved;
+    }
+  } catch {
+    // no saved port yet
+  }
+
+  for (let p = 30000; p < 40000; p++) {
+    if (await isPortFree(p)) {
+      await Deno.writeTextFile(PORT_FILE, String(p));
+      return p;
+    }
+  }
+
+  throw new Error("No free port found in range 30000-39999");
+}
+
+const port = await resolvePort();
 console.log(`Panna Cotta running on http://localhost:${port}`);
 Deno.serve({ port }, app.fetch);
