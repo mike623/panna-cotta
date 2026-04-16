@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (err) {
     console.error("Failed to load config:", err);
     document.getElementById("grid-container").innerHTML =
-      '<div style="color:#ef4444;padding:2rem;text-align:center;">Failed to connect to backend. Is it running?</div>';
+      '<div class="error-state"><div><strong>Connection failed</strong>Is the backend running?</div></div>';
     return;
   }
 

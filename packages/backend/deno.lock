@@ -327,7 +327,8 @@
         "minizlib",
         "mkdirp",
         "yallist"
-      ]
+      ],
+      "deprecated": true
     },
     "tinyexec@0.3.2": {
       "integrity": "sha512-KQQR9yN7R5+OSwaK0XQoj22pwHoTlgYqmUscPYoknOoWCWfj/5/ABTMRi69FrKU5ffPVh5QcFikpWJI/P1ocHA=="
@@ -474,6 +475,7 @@
     "https://deno.land/x/hono@v4.2.8/hono-base.ts": "2a508c026687a1fc12c0458e100e66d5d72e17f6e6532b407d19663aa7300327",
     "https://deno.land/x/hono@v4.2.8/hono.ts": "23edd0140bf0bd5a68c14ae96e5856a5cec6b844277e853b91025e91ea74f416",
     "https://deno.land/x/hono@v4.2.8/http-exception.ts": "cd387c6f7357db375ac3375f0346c6da80b46193b661881f660d6b15293fc086",
+    "https://deno.land/x/hono@v4.2.8/middleware/compress/index.ts": "98c403a5fe7e9c5f5d776350b422b0a125fb34696851b8b14f825b9b7b06f2ac",
     "https://deno.land/x/hono@v4.2.8/middleware/cors/index.ts": "976eb9ce8cefc214b403a2939503a13177cec76223274609a07ca554e0dc623b",
     "https://deno.land/x/hono@v4.2.8/middleware/logger/index.ts": "52a2e968890ada2c11ce89a7a783692c5767b8ed7fb23ccf6b559d255d13ccbc",
     "https://deno.land/x/hono@v4.2.8/mod.ts": "35fd2a2e14b52365e0ad66f168b067363fd0a60d75cbcb1b01685b04de97d60e",
