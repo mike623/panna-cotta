@@ -1,5 +1,6 @@
 import { loadConfig } from "c12";
 import { z } from "zod";
+import { stringify } from "@std/toml";
 
 const buttonSchema = z.object({
   name: z.string(),
@@ -61,4 +62,12 @@ export async function useStreamDeckConfig(): Promise<StreamDeckConfig> {
   }
 
   return parsedConfig.data;
+}
+
+export async function saveStreamDeckConfig(
+  config: StreamDeckConfig,
+  filePath = `${Deno.cwd()}/stream-deck.config.toml`,
+): Promise<void> {
+  const toml = stringify(config as Record<string, unknown>);
+  await Deno.writeTextFile(filePath, toml);
 }
