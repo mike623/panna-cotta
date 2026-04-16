@@ -30,11 +30,54 @@ class StreamDeckAPI {
     if (!response.ok) throw new Error(`Open URL failed: ${response.status}`);
     return response.json();
   }
+
+  async ping() {
+    const response = await fetch(`${this.baseUrl}/api/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    return response.ok;
+  }
 }
 
 const api = new StreamDeckAPI();
 let currentPage = 0;
 let config;
+let connectionLost = false;
+
+function getOrCreateBanner() {
+  let banner = document.getElementById("connection-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "connection-banner";
+    banner.className = "connection-banner hidden";
+    banner.innerHTML = '<i data-lucide="wifi-off"></i><span>Backend disconnected — retrying…</span>';
+    document.body.prepend(banner);
+    lucide.createIcons();
+  }
+  return banner;
+}
+
+function setConnectionState(online) {
+  if (online === !connectionLost) return;
+  connectionLost = !online;
+  const banner = getOrCreateBanner();
+  if (connectionLost) {
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+function startHealthPing() {
+  setInterval(async () => {
+    try {
+      const ok = await api.ping();
+      setConnectionState(ok);
+    } catch {
+      setConnectionState(false);
+    }
+  }, 5000);
+}
 
 function flashButton(button, className) {
   button.classList.add(className);
@@ -124,6 +167,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   renderGrid();
+  startHealthPing();
 
   const toggleThemeButton = document.getElementById("toggle-theme");
   const prevPageButton = document.getElementById("prev-page");
