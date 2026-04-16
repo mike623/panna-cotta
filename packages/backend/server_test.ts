@@ -28,3 +28,44 @@ Deno.test("Unknown API route returns 404", async () => {
   const res = await app.request("/api/nonexistent");
   assertEquals(res.status, 404);
 });
+
+Deno.test("PUT /api/config returns 400 for invalid body", async () => {
+  const app = new Hono();
+  app.put("/api/config", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body.grid?.rows !== "number") {
+      return c.json({ error: "Invalid config" }, 400);
+    }
+    return c.json({ ok: true });
+  });
+
+  const res = await app.request("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invalid: true }),
+  });
+  assertEquals(res.status, 400);
+});
+
+Deno.test("PUT /api/config returns 200 for valid body", async () => {
+  const app = new Hono();
+  app.put("/api/config", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body.grid?.rows !== "number") {
+      return c.json({ error: "Invalid config" }, 400);
+    }
+    return c.json({ ok: true });
+  });
+
+  const validConfig = {
+    grid: { rows: 2, cols: 3 },
+    buttons: [{ name: "X", type: "browser", icon: "globe", action: "https://x.com" }],
+  };
+
+  const res = await app.request("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(validConfig),
+  });
+  assertEquals(res.status, 200);
+});

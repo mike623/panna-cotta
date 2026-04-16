@@ -1,5 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { useStreamDeckConfig } from "./config.ts";
+import { saveStreamDeckConfig, useStreamDeckConfig } from "./config.ts";
+import type { StreamDeckConfig } from "./config.ts";
 
 Deno.test("useStreamDeckConfig returns valid config with grid and buttons", async () => {
   const config = await useStreamDeckConfig();
@@ -27,5 +28,30 @@ Deno.test("useStreamDeckConfig buttons have required fields", async () => {
       true,
       `Invalid button type: ${button.type}`,
     );
+  }
+});
+
+Deno.test("saveStreamDeckConfig writes valid TOML to file", async () => {
+  const tempDir = await Deno.makeTempDir();
+  const filePath = `${tempDir}/test-config.toml`;
+
+  const config: StreamDeckConfig = {
+    grid: { rows: 3, cols: 4 },
+    buttons: [
+      { name: "Test", type: "browser", icon: "globe", action: "https://example.com" },
+    ],
+  };
+
+  try {
+    await saveStreamDeckConfig(config, filePath);
+
+    const content = await Deno.readTextFile(filePath);
+    assertEquals(content.includes("[grid]"), true);
+    assertEquals(content.includes("rows = 3"), true);
+    assertEquals(content.includes("cols = 4"), true);
+    assertEquals(content.includes('name = "Test"'), true);
+    assertEquals(content.includes("[[buttons]]"), true);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
   }
 });
