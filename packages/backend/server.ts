@@ -40,7 +40,7 @@ app.put("/api/config", async (c) => {
 
   const parsed = configSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: parsed.error.message }, 400);
+    return c.json({ error: "Invalid config", details: parsed.error.flatten() }, 400);
   }
 
   try {
