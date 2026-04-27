@@ -1,0 +1,135 @@
+name: Tauri Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-sidecar:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            task: compile:sidecar:macos-arm
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            task: compile:sidecar:macos-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            task: compile:sidecar:windows-x64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Inject version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i.bak "s|CURRENT_VERSION = \".*\"|CURRENT_VERSION = \"$VERSION\"|" packages/backend/services/version.ts
+          rm -f packages/backend/services/version.ts.bak
+
+      - name: Compile sidecar
+        run: deno task ${{ matrix.task }}
+
+      - name: Upload sidecar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-${{ matrix.target }}
+          path: packages/desktop/src-tauri/binaries/
+
+  build-tauri:
+    needs: build-sidecar
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            sidecar-artifact: sidecar-aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            sidecar-artifact: sidecar-x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            sidecar-artifact: sidecar-x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sidecar-artifact }}
+          path: packages/desktop/src-tauri/binaries/
+
+      - name: Make sidecar executable
+        if: runner.os != 'Windows'
+        run: chmod +x packages/desktop/src-tauri/binaries/*
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri CLI
+        working-directory: packages/desktop
+        run: npm ci
+
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build Tauri app
+        working-directory: packages/desktop
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Upload macOS artifacts
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.target }}
+          path: |
+            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+
+      - name: Upload Windows artifacts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.target }}
+          path: |
+            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+
+  release:
+    needs: build-tauri
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all Tauri artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tauri-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
