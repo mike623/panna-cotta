@@ -1,6 +1,6 @@
 import { compare, parse } from "@std/semver";
 
-export const CURRENT_VERSION = "0.1.3";
+export const CURRENT_VERSION = "0.1.4";
 
 const GITHUB_RELEASES_URL =
   "https://api.github.com/repos/mike623/panna-cotta/releases/latest";
