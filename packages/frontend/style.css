@@ -55,8 +55,9 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI',
-    system-ui, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui,
+    sans-serif;
   background-color: var(--bg);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
@@ -69,7 +70,9 @@ body {
   display: grid;
   gap: clamp(0.5rem, 2vw, 1rem);
   padding: clamp(0.5rem, 2vw, 1rem);
-  padding-bottom: calc(clamp(0.5rem, 2vw, 1rem) + 4rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(
+    clamp(0.5rem, 2vw, 1rem) + 4rem + env(safe-area-inset-bottom, 0px)
+  );
   padding-left: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-left, 0px));
   padding-right: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-right, 0px));
   height: 100vh;
@@ -90,7 +93,10 @@ body {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  transition: background-color 0.12s ease, transform 0.1s ease, box-shadow 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    transform 0.1s ease,
+    box-shadow 0.12s ease;
   gap: 0.35rem;
   padding: 0.5rem;
   min-height: 44px;
@@ -322,7 +328,9 @@ body {
   flex-direction: column;
   gap: 0.5rem;
   padding: clamp(0.5rem, 2vw, 1rem);
-  padding-bottom: calc(clamp(0.5rem, 2vw, 1rem) + 4rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(
+    clamp(0.5rem, 2vw, 1rem) + 4rem + env(safe-area-inset-bottom, 0px)
+  );
   padding-left: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-left, 0px));
   padding-right: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-right, 0px));
   overflow-y: auto;
@@ -369,9 +377,15 @@ body {
   color: var(--text);
 }
 
-.list-item.button-success { background-color: var(--success) !important; }
-.list-item.button-error   { background-color: var(--error) !important; }
-.list-item.button-loading { opacity: 0.5; }
+.list-item.button-success {
+  background-color: var(--success) !important;
+}
+.list-item.button-error {
+  background-color: var(--error) !important;
+}
+.list-item.button-loading {
+  opacity: 0.5;
+}
 
 .page-dots {
   position: fixed;
@@ -391,7 +405,10 @@ body {
   border-radius: 50%;
   background: var(--text-muted);
   opacity: 0.35;
-  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .page-dot.active {
@@ -417,7 +434,10 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.12s ease, transform 0.1s ease, color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    transform 0.1s ease,
+    color 0.12s ease;
 }
 
 .tauri-close:hover {

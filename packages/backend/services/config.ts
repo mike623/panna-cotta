@@ -61,7 +61,9 @@ export async function useStreamDeckConfig(): Promise<StreamDeckConfig> {
   if (configFile) {
     console.log(`Loading configuration from: ${configFile}`);
   } else {
-    console.log(`Using default configuration. Config will be saved to: ${cfgFile}`);
+    console.log(
+      `Using default configuration. Config will be saved to: ${cfgFile}`,
+    );
   }
 
   const parsedConfig = configSchema.safeParse(config);
