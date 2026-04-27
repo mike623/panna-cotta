@@ -195,6 +195,11 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
     )?;
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItemBuilder::new("Quit").id("quit").build(app)?;
+    let version_str = format!("v{}", app.package_info().version);
+    let version_item = MenuItemBuilder::new(version_str)
+        .id("version")
+        .enabled(false)
+        .build(app)?;
 
     let menu = MenuBuilder::new(app)
         .item(&open)
@@ -206,6 +211,7 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
         .item(&sep2)
         .item(&autostart)
         .item(&sep3)
+        .item(&version_item)
         .item(&quit)
         .build()?;
 
