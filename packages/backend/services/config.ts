@@ -40,18 +40,28 @@ const defaultConfig: StreamDeckConfig = {
   ],
 };
 
+function configDir(): string {
+  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? ".";
+  return `${home}/.panna-cotta`;
+}
+
+export function configFilePath(): string {
+  return `${configDir()}/stream-deck.config.toml`;
+}
+
 export async function useStreamDeckConfig(): Promise<StreamDeckConfig> {
+  const cfgFile = configFilePath();
   const { config, configFile } = await loadConfig<StreamDeckConfig>({
     name: "stream-deck",
     defaultConfig,
-    rcFile: "stream-deck.config.toml",
-    cwd: Deno.cwd(),
+    rcFile: cfgFile,
+    cwd: "/",
   });
 
   if (configFile) {
     console.log(`Loading configuration from: ${configFile}`);
   } else {
-    console.log("Using default configuration.");
+    console.log(`Using default configuration. Config will be saved to: ${cfgFile}`);
   }
 
   const parsedConfig = configSchema.safeParse(config);
@@ -66,8 +76,9 @@ export async function useStreamDeckConfig(): Promise<StreamDeckConfig> {
 
 export async function saveStreamDeckConfig(
   config: StreamDeckConfig,
-  filePath = `${Deno.cwd()}/stream-deck.config.toml`,
+  filePath = configFilePath(),
 ): Promise<void> {
+  await Deno.mkdir(configDir(), { recursive: true });
   const toml = stringify(config as Record<string, unknown>);
   await Deno.writeTextFile(filePath, toml);
 }

@@ -3,7 +3,7 @@
     "start:backend": "deno run --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
     "start:backend:watch": "deno run --watch --allow-net --allow-env --allow-sys --allow-run --allow-read --allow-write packages/backend/server.ts",
     "compile": "deno compile -A --include packages/frontend --output stream-backend packages/backend/server.ts",
-    "test": "deno test --config packages/backend/deno.json --allow-read --allow-env --allow-net --allow-run --allow-sys packages/backend/",
+    "test": "deno test --config packages/backend/deno.json --allow-read --allow-write --allow-env --allow-net --allow-run --allow-sys packages/backend/",
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
