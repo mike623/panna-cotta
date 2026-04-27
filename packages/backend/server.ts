@@ -32,6 +32,33 @@ app.post("/api/open-url", (c) => openUrl(c.req.raw));
 app.get("/api/health", (c) => c.text("OK"));
 app.get("/api/version", async (c) => c.json(await getVersionInfo()));
 
+app.get("/api/check-update", async (c) => {
+  try {
+    const res = await fetch(
+      "https://api.github.com/repos/mwong-io/panna-cotta/releases/latest",
+      { headers: { "User-Agent": "panna-cotta-server" } },
+    );
+    if (!res.ok) return c.json({ error: "GitHub API error" }, 502);
+    const data = await res.json() as {
+      tag_name: string;
+      name: string;
+      html_url: string;
+      assets: Array<{ name: string; browser_download_url: string }>;
+    };
+    return c.json({
+      version: data.tag_name,
+      name: data.name,
+      url: data.html_url,
+      assets: data.assets.map((a) => ({
+        name: a.name,
+        url: a.browser_download_url,
+      })),
+    });
+  } catch (err) {
+    return c.json({ error: `Failed to check for updates: ${String(err)}` }, 500);
+  }
+});
+
 app.get("/api/config", async (c) => {
   const config = await useStreamDeckConfig();
   return c.json(config);
@@ -295,12 +322,22 @@ app.get("/", (c) => {
   <title>Panna Cotta — Setup</title>
   <style>
     body { font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #111; color: #eee; }
-    .card { background: #1a1a2e; padding: 2rem; border-radius: 1rem; text-align: center; max-width: 400px; }
+    .card { background: #1a1a2e; padding: 2rem; border-radius: 1rem; text-align: center; max-width: 400px; width: 100%; box-sizing: border-box; }
     h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
     p { color: #aaa; line-height: 1.5; }
     img { margin: 1.5rem 0; border-radius: 0.5rem; }
     code { background: #2a2a3e; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.9rem; }
     a { color: #818cf8; }
+    .btn-check-update { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 1rem; padding: 0.5rem 1.1rem; background: #818cf8; color: #fff; border: none; border-radius: 0.5rem; font-size: 0.9rem; cursor: pointer; transition: background 0.15s; }
+    .btn-check-update:hover { background: #6366f1; }
+    .btn-check-update:disabled { background: #4a4a6a; cursor: default; }
+    .update-banner { margin-top: 1rem; padding: 1rem; border-radius: 0.5rem; background: #0f2e1a; border: 1px solid #22c55e; text-align: left; font-size: 0.88rem; }
+    .update-banner.error { background: #2e0f0f; border-color: #ef4444; }
+    .update-banner h3 { margin: 0 0 0.5rem; color: #22c55e; font-size: 0.95rem; }
+    .update-banner.error h3 { color: #ef4444; }
+    .asset-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+    .asset-list li { margin: 0.3rem 0; }
+    .asset-list a { color: #818cf8; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -311,7 +348,35 @@ app.get("/", (c) => {
     <p>Or open: <a href="${appUrl}"><code>${appUrl}</code></a></p>
     <p style="margin-top:1.5rem;border-top:1px solid #2a2a3e;padding-top:1rem"><a href="/admin" style="color:#818cf8">⚙ Admin — edit config</a></p>
     <p style="margin-top:0.5rem;font-size:0.8rem;color:#666">v${CURRENT_VERSION}</p>
+    <button class="btn-check-update" id="checkUpdateBtn" onclick="checkUpdate()">↑ Check for updates</button>
+    <div id="updateResult" style="display:none"></div>
   </div>
+  <script>
+    async function checkUpdate() {
+      const btn = document.getElementById('checkUpdateBtn');
+      const result = document.getElementById('updateResult');
+      btn.disabled = true;
+      btn.textContent = 'Checking…';
+      result.style.display = 'none';
+      try {
+        const res = await fetch('/api/check-update');
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          result.innerHTML = '<div class="update-banner error"><h3>Could not check for updates</h3><p>' + (data.error ?? 'Unknown error') + '</p></div>';
+        } else {
+          const assets = data.assets.length
+            ? '<ul class="asset-list">' + data.assets.map(a => '<li><a href="' + a.url + '" target="_blank" rel="noopener">⬇ ' + a.name + '</a></li>').join('') + '</ul>'
+            : '<p>No binary assets found. <a href="' + data.url + '" target="_blank" rel="noopener">View release on GitHub</a></p>';
+          result.innerHTML = '<div class="update-banner"><h3>Latest release: ' + data.version + '</h3><p>' + (data.name ?? '') + '</p>' + assets + '</div>';
+        }
+      } catch (e) {
+        result.innerHTML = '<div class="update-banner error"><h3>Network error</h3><p>' + e.message + '</p></div>';
+      }
+      result.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '↑ Check for updates';
+    }
+  </script>
 </body>
 </html>`);
 });
