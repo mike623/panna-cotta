@@ -1,1 +1,2 @@
-// Tauri app library entry point — implementation added in Task 5
+// Tauri app library entry point
+pub mod app;
