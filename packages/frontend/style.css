@@ -62,6 +62,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   overscroll-behavior: none;
+  overflow-x: hidden;
 }
 
 .grid-container {
@@ -73,6 +74,7 @@ body {
   padding-right: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-right, 0px));
   height: 100vh;
   height: 100dvh;
+  touch-action: pan-y;
 }
 
 .grid-button {
@@ -305,4 +307,87 @@ body {
 .toolbar-button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: clamp(0.5rem, 2vw, 1rem);
+  padding-bottom: calc(clamp(0.5rem, 2vw, 1rem) + 4rem + env(safe-area-inset-bottom, 0px));
+  padding-left: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-left, 0px));
+  padding-right: max(clamp(0.5rem, 2vw, 1rem), env(safe-area-inset-right, 0px));
+  overflow-y: auto;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.list-item {
+  background-color: var(--btn-bg);
+  border: var(--btn-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--btn-shadow);
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+  min-height: 56px;
+  transition: background-color 0.12s ease, transform 0.1s ease;
+}
+
+.list-item:hover {
+  background-color: var(--btn-hover);
+}
+
+.list-item:active {
+  transform: scale(0.98);
+  box-shadow: none;
+}
+
+.list-item-icon {
+  color: var(--icon);
+  flex-shrink: 0;
+}
+
+.list-item-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.list-item.button-success { background-color: var(--success) !important; }
+.list-item.button-error   { background-color: var(--error) !important; }
+.list-item.button-loading { opacity: 0.5; }
+
+.page-dots {
+  position: fixed;
+  bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.page-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.35;
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+
+.page-dot.active {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.5);
 }

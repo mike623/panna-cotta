@@ -1,6 +1,6 @@
 <!-- prettier-ignore -->
 <div align="center">
-  <img src="packages/frontend/assets/logo.svg" alt="Panna Cotta" width="72" height="72" />
+  <img src="packages/frontend/assets/icon-512.png" alt="Panna Cotta" width="72" height="72" />
   <h1>Panna Cotta</h1>
   <p>A web-based Stream Deck for controlling your Mac from any device on your network.</p>
 
@@ -15,7 +15,11 @@
 
 Define a grid of buttons in a TOML file. Open the URL on your phone, tablet, or any browser on the same network. Click a button to open a URL or launch a macOS app — instantly, from across the room.
 
-![Screenshot](packages/frontend/assets/screenshot.png)
+<div align="center">
+  <img src="packages/frontend/assets/screenshot.png" alt="Grid view" width="280" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="packages/frontend/assets/screenshot-list.png" alt="List view" width="280" />
+</div>
 
 ## Features
 
@@ -24,6 +28,8 @@ Define a grid of buttons in a TOML file. Open the URL on your phone, tablet, or 
 - **Two action types** — open a URL in the client browser or launch a macOS app on the host
 - **Any Lucide icon** — use any icon name from [lucide.dev/icons](https://lucide.dev/icons)
 - **Pagination** — extra buttons overflow into additional pages automatically
+- **Swipe to paginate** — drag left/right to switch pages; follows your finger with snap-back if not committed
+- **List view** — toggle between grid and scrollable list with one tap; preference persists
 - **PWA installable** — add to your phone or tablet home screen for a native feel
 - **Offline-capable** — service worker caches the UI so it loads without a network hop
 - **Dark / light theme** — toggle manually; preference is remembered across sessions
@@ -82,7 +88,7 @@ The `icon` field accepts any [Lucide](https://lucide.dev/icons) icon name (e.g. 
 
 ### Pagination
 
-When the number of buttons exceeds `rows × cols`, the grid automatically paginates. Navigation controls appear at the bottom of the screen.
+When the number of buttons exceeds `rows × cols`, the grid automatically paginates. Swipe left/right anywhere on the grid to navigate — the page follows your finger and snaps back if you don't cross the threshold. Tap the toolbar arrows for button-driven navigation. Page indicator dots are always visible.
 
 ## Development
 

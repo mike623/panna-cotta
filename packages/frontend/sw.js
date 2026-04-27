@@ -1,13 +1,14 @@
-const CACHE_NAME = "panna-cotta-v4";
+const CACHE_NAME = "panna-cotta-v11";
 const ASSETS = [
   "/apps/index.html",
   "/apps/reset.css",
   "/apps/style.css",
   "/apps/app.js",
   "/apps/manifest.json",
-  "/apps/assets/logo.svg",
   "/apps/assets/favicon.ico",
   "/apps/assets/apple-touch-icon.png",
+  "/apps/assets/icon-192.png",
+  "/apps/assets/icon-512.png",
   "/apps/assets/maskable-icon.png",
   "/apps/assets/splash.png",
 ];
