@@ -395,6 +395,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   startHealthPing();
   checkForUpdate();
 
+  if (typeof window.__TAURI__ !== "undefined") {
+    const closeBtn = document.getElementById("tauri-close");
+    if (closeBtn) {
+      closeBtn.classList.remove("hidden");
+      lucide.createIcons({ nodes: [closeBtn] });
+      closeBtn.addEventListener("click", () => window.close());
+    }
+  }
+
   function setButtonIcon(button, iconName) {
     const existing = button.querySelector("svg[data-lucide], i[data-lucide]");
     if (existing) {

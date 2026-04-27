@@ -7,7 +7,7 @@
     "frontendDist": "../dist-placeholder"
   },
   "app": {
-    "withGlobalTauri": false,
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
@@ -21,13 +21,6 @@
         "alwaysOnTop": false
       }
     ],
-    "trayIcon": {
-      "id": "main",
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": true,
-      "title": "Panna Cotta"
-    },
     "security": {
       "csp": null
     }

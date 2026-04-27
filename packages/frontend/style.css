@@ -391,3 +391,38 @@ body {
   opacity: 1;
   transform: scale(1.5);
 }
+
+.tauri-close {
+  position: fixed;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 2000;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--btn-bg);
+  border: var(--btn-border);
+  border-radius: 9999px;
+  color: var(--text-muted);
+  box-shadow: var(--btn-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s ease, transform 0.1s ease, color 0.12s ease;
+}
+
+.tauri-close:hover {
+  background-color: var(--error);
+  color: var(--text);
+}
+
+.tauri-close:active {
+  transform: scale(0.92);
+}
+
+.tauri-close i {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}

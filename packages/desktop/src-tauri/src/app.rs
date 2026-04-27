@@ -124,11 +124,34 @@ pub fn toggle_window(app: &AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
+            let port = read_port().unwrap_or(30000);
+            if let Ok(url) = format!("http://localhost:{port}/apps/").parse() {
+                let _ = window.navigate(url);
+            }
             let _ = window.show();
             let _ = window.set_focus();
         }
     } else {
         open_window(app);
+    }
+}
+
+fn open_admin(app: &AppHandle) {
+    let port = read_port().unwrap_or(30000);
+    let url = format!("http://localhost:{port}/admin");
+    if let Ok(parsed) = url.parse() {
+        if let Some(win) = app.get_webview_window("admin") {
+            let _ = win.navigate(parsed);
+            let _ = win.show();
+            let _ = win.set_focus();
+        } else if let Ok(win) = WebviewWindowBuilder::new(app, "admin", WebviewUrl::External(parsed))
+            .title("Panna Cotta — Admin")
+            .inner_size(540.0, 720.0)
+            .decorations(true)
+            .build()
+        {
+            let _ = win.show();
+        }
     }
 }
 
@@ -150,6 +173,7 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
     let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
 
     let open = MenuItemBuilder::new("Open").id("open").build(app)?;
+    let admin = MenuItemBuilder::new("Admin Config…").id("admin").build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let port_item = MenuItemBuilder::new("Port: --")
         .id("port")
@@ -174,6 +198,7 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
 
     let menu = MenuBuilder::new(app)
         .item(&open)
+        .item(&admin)
         .item(&sep1)
         .item(&port_item)
         .item(&status_item)
@@ -187,15 +212,12 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
     // Store menu in state for later updates
     state.lock().unwrap_or_else(|e| e.into_inner()).menu = Some(menu.clone());
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::InvalidIcon(
-            std::io::Error::new(std::io::ErrorKind::Other, "no window icon"),
-        ))?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+        .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
+        .icon_as_template(true)
         .menu(&menu)
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
@@ -217,6 +239,7 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "open" => toggle_window(app),
+        "admin" => open_admin(app),
         "quit" => app.exit(0),
         "start-stop" => {
             let state = app.state::<Arc<Mutex<AppState>>>();
