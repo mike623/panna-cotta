@@ -6,12 +6,14 @@ use tauri::{
     AppHandle, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 pub struct AppState {
     pub port: Option<u16>,
     pub running: bool,
     pub menu: Option<Menu<Wry>>,
+    pub child: Option<CommandChild>,
 }
 
 impl Default for AppState {
@@ -20,6 +22,7 @@ impl Default for AppState {
             port: None,
             running: false,
             menu: None,
+            child: None,
         }
     }
 }
@@ -37,20 +40,18 @@ fn read_port() -> Option<u16> {
         .and_then(|s| s.trim().parse::<u16>().ok())
 }
 
-pub fn spawn_sidecar(app: &AppHandle) -> bool {
+pub fn spawn_sidecar(app: &AppHandle, state: &Arc<Mutex<AppState>>) {
     let shell = app.shell();
     match shell.sidecar("stream-backend") {
         Ok(cmd) => match cmd.spawn() {
-            Ok(_) => true,
-            Err(e) => {
-                eprintln!("Failed to spawn sidecar: {e}");
-                false
+            Ok((_rx, child)) => {
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.child = Some(child);
+                s.running = true;
             }
+            Err(e) => eprintln!("Failed to spawn sidecar: {e}"),
         },
-        Err(e) => {
-            eprintln!("Failed to create sidecar command: {e}");
-            false
-        }
+        Err(e) => eprintln!("Failed to create sidecar command: {e}"),
     }
 }
 
@@ -59,7 +60,7 @@ fn poll_port_with_retry(app: AppHandle, state: Arc<Mutex<AppState>>) {
         let mut retries = 0;
         loop {
             let port = read_port();
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             match port {
                 Some(p) => {
                     retries = 0;
@@ -145,6 +146,9 @@ fn open_window(app: &AppHandle) {
 }
 
 fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+
     let open = MenuItemBuilder::new("Open").id("open").build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let port_item = MenuItemBuilder::new("Port: --")
@@ -157,8 +161,14 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
         .build(app)?;
     let start_stop = MenuItemBuilder::new("Start").id("start-stop").build(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let autostart =
-        CheckMenuItem::with_id(app, "autostart", "Launch at Login", true, false, None::<&str>)?;
+    let autostart = CheckMenuItem::with_id(
+        app,
+        "autostart",
+        "Launch at Login",
+        true,
+        is_autostart_enabled,
+        None::<&str>,
+    )?;
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
@@ -175,10 +185,17 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
         .build()?;
 
     // Store menu in state for later updates
-    state.lock().unwrap().menu = Some(menu.clone());
+    state.lock().unwrap_or_else(|e| e.into_inner()).menu = Some(menu.clone());
+
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| tauri::Error::InvalidIcon(
+            std::io::Error::new(std::io::ErrorKind::Other, "no window icon"),
+        ))?;
 
     TrayIconBuilder::with_id("main")
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(icon)
         .menu(&menu)
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
@@ -203,11 +220,18 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         "quit" => app.exit(0),
         "start-stop" => {
             let state = app.state::<Arc<Mutex<AppState>>>();
-            let running = state.lock().unwrap().running;
-            if running {
-                eprintln!("Stop not yet implemented: sidecar process handle not stored");
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            if s.running {
+                if let Some(child) = s.child.take() {
+                    let _ = child.kill();
+                    s.running = false;
+                    let menu = s.menu.clone();
+                    drop(s);
+                    update_tray_status(app, &menu, None, false);
+                }
             } else {
-                spawn_sidecar(app);
+                drop(s);
+                spawn_sidecar(app, &app.state::<Arc<Mutex<AppState>>>());
             }
         }
         "autostart" => {
@@ -239,7 +263,7 @@ pub fn run() {
             let state_for_tray = Arc::clone(&state_for_setup);
             let state_for_poll = Arc::clone(&state_for_setup);
 
-            spawn_sidecar(app.handle());
+            spawn_sidecar(app.handle(), &state_for_setup);
             build_tray(app.handle(), state_for_tray)?;
             poll_port_with_retry(app.handle().clone(), state_for_poll);
 
