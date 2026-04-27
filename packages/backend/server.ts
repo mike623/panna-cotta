@@ -55,7 +55,10 @@ app.get("/api/check-update", async (c) => {
       })),
     });
   } catch (err) {
-    return c.json({ error: `Failed to check for updates: ${String(err)}` }, 500);
+    return c.json(
+      { error: `Failed to check for updates: ${String(err)}` },
+      500,
+    );
   }
 });
 
