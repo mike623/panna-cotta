@@ -185,6 +185,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.version-badge {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
 .collapse-button {
   margin-left: auto;
 }

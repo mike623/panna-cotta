@@ -121,6 +121,8 @@ function showUpdateBanner(info) {
 async function checkForUpdate() {
   try {
     const info = await api.getVersion();
+    const badge = document.getElementById("version-badge");
+    if (badge) badge.textContent = `v${info.current}`;
     if (!info.updateAvailable || !info.latest) return;
     const dismissed = localStorage.getItem("dismissed-version");
     if (dismissed === info.latest) return;

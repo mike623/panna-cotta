@@ -240,7 +240,13 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "open" => toggle_window(app),
         "admin" => open_admin(app),
-        "quit" => app.exit(0),
+        "quit" => {
+            let state = app.state::<Arc<Mutex<AppState>>>();
+            if let Some(child) = state.lock().unwrap_or_else(|e| e.into_inner()).child.take() {
+                let _ = child.kill();
+            }
+            app.exit(0);
+        }
         "start-stop" => {
             let state = app.state::<Arc<Mutex<AppState>>>();
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
