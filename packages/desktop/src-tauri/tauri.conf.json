@@ -1,6 +1,6 @@
 {
   "productName": "Panna Cotta",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "io.mwong.panna-cotta",
   "build": {
     "beforeBuildCommand": "",
@@ -35,6 +35,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/stream-backend"]
+    "externalBin": [
+      "binaries/stream-backend"
+    ]
   }
 }
