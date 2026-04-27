@@ -19,3 +19,6 @@ Thumbs.db
 # Hermes
 .hermes/
 .gstack/
+
+# Worktrees
+.worktrees/
