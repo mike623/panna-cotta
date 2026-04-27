@@ -1,4 +1,6 @@
-# Claude Code Configuration - RuFlo V3
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Behavioral Rules (Always Enforced)
 
@@ -12,26 +14,98 @@
 - NEVER commit secrets, credentials, or .env files
 - ALWAYS consider cross-platform compatibility for any native OS function (file paths, env vars, process APIs, shell commands) — support macOS, Linux, and Windows unless explicitly told otherwise
 
-## File Organization
+## Commands
 
-- NEVER save to root folder — use the directories below
-- Use `/src` for source code files
-- Use `/tests` for test files
-- Use `/docs` for documentation and markdown files
-- Use `/config` for configuration files
-- Use `/scripts` for utility scripts
-- Use `/examples` for example code
+```bash
+# Run backend (dev)
+deno task start:backend
 
-## Project Architecture
+# Run backend with auto-reload
+deno task start:backend:watch
 
-- Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines
-- Use typed interfaces for all public APIs
-- Prefer TDD London School (mock-first) for new code
-- Use event sourcing for state changes
-- Ensure input validation at system boundaries
+# Run tests
+deno task test
 
-### Project Config
+# Run a single test file
+deno test --config packages/backend/deno.json --allow-read --allow-env --allow-net --allow-run --allow-sys packages/backend/services/config_test.ts
+
+# Lint
+deno task lint
+
+# Format
+deno task fmt
+
+# Compile standalone binary
+deno task compile
+
+# Compile Tauri sidecar binaries
+deno task compile:sidecar:macos-arm    # Apple Silicon
+deno task compile:sidecar:macos-x64   # Intel Mac
+deno task compile:sidecar:windows-x64 # Windows
+```
+
+ALWAYS run `deno task test` after making backend changes. ALWAYS verify lint passes before committing.
+
+## Architecture
+
+Panna Cotta is a web-based Stream Deck: a Deno/Hono backend serves a plain HTML/CSS/JS frontend that renders a configurable button grid. Clicking a button calls the backend API, which uses macOS system commands (`open`, `osascript`) to launch apps or open URLs.
+
+### Package Structure
+
+```
+packages/
+  backend/
+    server.ts              # Hono app, API routes, port resolution, landing page HTML
+    services/
+      config.ts            # c12 TOML loader + Zod validation → StreamDeckConfig
+      system.ts            # Deno.Command wrappers for macOS (open, osascript, pmset)
+      version.ts           # GitHub Releases API check with 1-hour cache
+  frontend/
+    app.js                 # Stream Deck UI: grid render, swipe pagination, view toggle
+    style.css              # CSS variables for dark/light theme
+    sw.js                  # Service worker: cache-first, skips /api/*
+    manifest.json          # PWA manifest
+  desktop/
+    src-tauri/
+      src/app.rs           # Tauri v2: tray menu, sidecar spawn, port polling, window
+      tauri.conf.json      # Tauri config; sidecar declared as externalBin
+stream-deck.config.toml    # User button config (read from cwd at runtime)
+deno.json                  # Root tasks and import map
+```
+
+### Key Design Decisions
+
+**Port persistence**: Backend picks a free port in 30000–39999, writes it to `~/.panna-cotta.port`. On restart, it tries the saved port first. The Tauri desktop app reads this file to poll server status.
+
+**Frontend is zero-build**: Plain HTML/CSS/JS — no bundler. Backend embeds and serves `packages/frontend/` as static files via `serveDir`. In the compiled binary, frontend assets are embedded at compile time with `--include packages/frontend`.
+
+**Sidecar pattern**: The Tauri desktop app compiles the Deno backend to a native binary (`stream-backend-<target>`), places it in `src-tauri/binaries/`, and spawns it as a Tauri sidecar. Tauri manages the process lifecycle.
+
+**Config loading**: `c12` reads `stream-deck.config.toml` from `cwd`. Config is validated with Zod on every `/api/config` GET. The admin UI at `/admin` PUTs validated JSON back, which the backend serializes to TOML via `@std/toml`.
+
+**Routes**:
+- `/` — setup page with QR code (points to `/apps` on local network IP)
+- `/apps/*` — static frontend files
+- `/admin` — inline admin UI for editing config
+- `/api/config` GET/PUT — config CRUD
+- `/api/execute` POST — macOS command dispatcher (open-app, system-volume, brightness)
+- `/api/open-app` POST, `/api/open-url` POST — direct app/URL launchers
+- `/api/version` GET — current + latest version with update check
+- `/api/check-update` GET — proxies GitHub Releases API
+
+### Tauri Desktop App
+
+- Tray icon spawns sidecar on startup, polls `~/.panna-cotta.port` every 500ms
+- Tray menu: Open window, Port/status display, Start/Stop toggle, Launch at Login, Quit
+- Window (`main`) is hidden by default; left-click tray icon or "Open" to show
+- Window close hides rather than destroys (prevents_close + hide)
+- macOS activation policy: `Accessory` (no Dock icon)
+
+### Releases
+
+Tagged commits (`v*`) trigger GitHub Actions to build standalone binaries for Linux x86_64, macOS Intel, macOS Apple Silicon, and Tauri `.dmg`/`.exe` installers.
+
+## Project Config (RuFlo V3)
 
 - **Topology**: hierarchical-mesh
 - **Max Agents**: 15
@@ -39,207 +113,17 @@
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
-## Build & Test
-
-```bash
-# Build
-npm run build
-
-# Test
-npm test
-
-# Lint
-npm run lint
-```
-
-- ALWAYS run tests after making code changes
-- ALWAYS verify build succeeds before committing
-
-## Security Rules
-
-- NEVER hardcode API keys, secrets, or credentials in source files
-- NEVER commit .env files or any file containing secrets
-- Always validate user input at system boundaries
-- Always sanitize file paths to prevent directory traversal
-- Run `npx @claude-flow/cli@latest security scan` after security-related changes
-
-## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
+### Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
 - All operations MUST be concurrent/parallel in a single message
-- Use Claude Code's Agent tool for spawning agents, not just MCP
 - ALWAYS spawn ALL agents in ONE message with full instructions via Agent tool
 - ALWAYS batch ALL file reads/writes/edits in ONE message
 - ALWAYS batch ALL Bash commands in ONE message
+- ALWAYS use `run_in_background: true` for all Agent tool calls
+- After spawning agents, STOP — do NOT add more tool calls or check status
 
-## Swarm Orchestration
-
-- MUST initialize the swarm using CLI tools when starting complex tasks
-- MUST spawn concurrent agents using Claude Code's Agent tool
-- Never use CLI tools alone for execution — Agent tool agents do the actual work
-- MUST call CLI tools AND Agent tool in ONE message for complex work
-
-### 3-Tier Model Routing (ADR-026)
-
-| Tier | Handler | Latency | Cost | Use Cases |
-|------|---------|---------|------|-----------|
-| **1** | Agent Booster (WASM) | <1ms | $0 | Simple transforms (var→const, add types) — Skip LLM |
-| **2** | Haiku | ~500ms | $0.0002 | Simple tasks, low complexity (<30%) |
-| **3** | Sonnet/Opus | 2-5s | $0.003-0.015 | Complex reasoning, architecture, security (>30%) |
-
-- For Tier 1 simple transforms, use Edit tool directly — no LLM agent needed
-
-## Swarm Configuration & Anti-Drift
-
-- ALWAYS use hierarchical topology for coding swarms
-- Keep maxAgents at 6-8 for tight coordination
-- Use specialized strategy for clear role boundaries
-- Use `raft` consensus for hive-mind (leader maintains authoritative state)
-- Run frequent checkpoints via `post-task` hooks
-- Keep shared memory namespace for all agents
+### Swarm Init
 
 ```bash
 npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
 ```
-
-## Swarm Execution Rules
-
-- ALWAYS use `run_in_background: true` for all Agent tool calls
-- ALWAYS put ALL Agent calls in ONE message for parallel execution
-- After spawning, STOP — do NOT add more tool calls or check status
-- Never poll agent status repeatedly — trust agents to return
-- When agent results arrive, review ALL results before proceeding
-
-## V3 CLI Commands
-
-### Core Commands
-
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization |
-| `agent` | 8 | Agent lifecycle management |
-| `swarm` | 6 | Multi-agent swarm coordination |
-| `memory` | 11 | AgentDB memory with HNSW search |
-| `task` | 6 | Task creation and lifecycle |
-| `session` | 7 | Session state management |
-| `hooks` | 17 | Self-learning hooks + 12 workers |
-| `hive-mind` | 6 | Byzantine fault-tolerant consensus |
-
-### Quick CLI Examples
-
-```bash
-npx @claude-flow/cli@latest init --wizard
-npx @claude-flow/cli@latest agent spawn -t coder --name my-coder
-npx @claude-flow/cli@latest swarm init --v3-mode
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-npx @claude-flow/cli@latest doctor --fix
-```
-
-## Available Agents (16 Roles + Custom)
-
-### Core Development
-`coder`, `reviewer`, `tester`, `planner`, `researcher`
-
-### Specialized
-`security-architect`, `security-auditor`, `memory-specialist`, `performance-engineer`
-
-### Coordination
-`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-
-### GitHub & Repository
-`pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-Any string can be used as a custom agent type — these are the typed roles with specialized behavior.
-
-## Memory & Vector Search
-
-### MCP Tools (use via ToolSearch to discover)
-
-| Tool | Description |
-|------|-------------|
-| `memory_store` | Store value with ONNX 384-dim vector embedding |
-| `memory_search` | Semantic vector search by query |
-| `memory_retrieve` | Get entry by key |
-| `memory_list` | List entries in namespace |
-| `memory_delete` | Delete entry |
-| `memory_import_claude` | Import Claude Code memories into AgentDB (allProjects=true for all) |
-| `memory_search_unified` | Search across ALL namespaces (Claude + AgentDB + patterns) |
-| `memory_bridge_status` | Show bridge health, vectors, SONA, intelligence |
-
-### CLI Commands
-
-```bash
-# Store with vector embedding
-npx @claude-flow/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
-
-# Semantic search
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-
-# Import all Claude Code memories into AgentDB
-node .claude/helpers/auto-memory-hook.mjs import-all
-```
-
-### Claude Code ↔ AgentDB Bridge
-
-Claude Code auto-memory files (`~/.claude/projects/*/memory/*.md`) are automatically imported into AgentDB with ONNX vector embeddings on session start. Use `memory_search_unified` to search across both stores.
-
-## Key MCP Tools (314 available — use ToolSearch to discover)
-
-### Most Used Tools
-
-| Category | Tools | What They Do |
-|----------|-------|-------------|
-| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` | Store/search with ONNX vector embeddings |
-| **Claude Bridge** | `memory_import_claude`, `memory_bridge_status` | Import Claude memories into AgentDB |
-| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` | Multi-agent coordination |
-| **Agents** | `agent_spawn`, `agent_list`, `agent_status` | Agent lifecycle |
-| **Hive-Mind** | `hive-mind_init`, `hive-mind_spawn`, `hive-mind_consensus` | Byzantine/Raft consensus |
-| **Hooks** | `hooks_route`, `hooks_session-start`, `hooks_post-task` | Task routing + learning |
-| **Workers** | `hooks_worker-list`, `hooks_worker-dispatch` | 12 background workers |
-| **Security** | `aidefence_scan`, `aidefence_is_safe` | Prompt injection detection |
-| **Intelligence** | `hooks_intelligence`, `neural_status` | Pattern learning + SONA |
-
-### Swarm Capabilities
-
-- **Topologies**: hierarchical (anti-drift), mesh, ring, star, adaptive
-- **Consensus**: Raft (leader-based), Byzantine (PBFT), Gossip (eventual)
-- **Hive-Mind**: Queen-led coordination with spawn, broadcast, consensus voting, shared memory
-- **12 Background Workers**: audit, optimize, testgaps, map, deepdive, document, refactor, benchmark, ultralearn, consolidate, predict, preload
-
-### Memory Capabilities
-
-- **ONNX Embeddings**: all-MiniLM-L6-v2, 384 dimensions — real neural vectors
-- **DiskANN**: SSD-friendly vector search (8,000x faster insert than HNSW, perfect recall at 1K)
-- **sql.js**: Cross-platform SQLite (WASM, no native compilation)
-- **Claude Code Bridge**: Auto-imports MEMORY.md files into AgentDB on session start
-- **Unified Search**: `memory_search_unified` searches Claude memories + AgentDB + patterns
-- **SONA Learning**: Trajectory recording → pattern extraction → file persistence
-
-### How to Discover Tools
-
-Use ToolSearch to find specific tools:
-```
-ToolSearch("memory search")     → memory_store, memory_search, memory_search_unified
-ToolSearch("swarm")             → swarm_init, swarm_status, swarm_health, swarm_shutdown
-ToolSearch("hive consensus")    → hive-mind_consensus, hive-mind_status
-ToolSearch("+aidefence")        → aidefence_scan, aidefence_is_safe, aidefence_has_pii
-```
-
-## Quick Setup
-
-```bash
-claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
-npx @claude-flow/cli@latest daemon start
-npx @claude-flow/cli@latest doctor --fix
-```
-
-## Claude Code vs MCP Tools
-
-- **Claude Code Agent tool** handles execution: agents, file ops, code generation, git
-- **MCP tools** (via ToolSearch) handle coordination: swarm, memory, hooks, routing, hive-mind
-- **CLI commands** (via Bash) are the same tools with terminal output
-- Use `ToolSearch("keyword")` to discover available MCP tools
-
-## Support
-
-- Documentation: https://github.com/ruvnet/ruflo
-- Issues: https://github.com/ruvnet/ruflo/issues
