@@ -6,7 +6,10 @@
     "test": "deno test --config packages/backend/deno.json --allow-read --allow-env --allow-net --allow-run --allow-sys packages/backend/",
     "fmt": "deno fmt",
     "fmt:check": "deno fmt --check",
-    "lint": "deno lint"
+    "lint": "deno lint",
+    "compile:sidecar:macos-arm": "deno compile -A --target aarch64-apple-darwin --include packages/frontend --output packages/desktop/src-tauri/binaries/stream-backend-aarch64-apple-darwin packages/backend/server.ts",
+    "compile:sidecar:macos-x64": "deno compile -A --target x86_64-apple-darwin --include packages/frontend --output packages/desktop/src-tauri/binaries/stream-backend-x86_64-apple-darwin packages/backend/server.ts",
+    "compile:sidecar:windows-x64": "deno compile -A --target x86_64-pc-windows-msvc --include packages/frontend --output packages/desktop/src-tauri/binaries/stream-backend-x86_64-pc-windows-msvc packages/backend/server.ts"
   },
   "lint": {
     "exclude": ["packages/frontend/"]
