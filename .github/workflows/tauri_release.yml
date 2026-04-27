@@ -29,13 +29,6 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Inject version from tag
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          sed -i.bak "s|CURRENT_VERSION = \".*\"|CURRENT_VERSION = \"$VERSION\"|" packages/backend/services/version.ts
-          rm -f packages/backend/services/version.ts.bak
-
       - name: Compile sidecar
         run: deno task ${{ matrix.task }}
 

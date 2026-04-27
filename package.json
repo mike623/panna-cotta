@@ -1,0 +1,11 @@
+{
+  "name": "panna-cotta",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "release": "release-it"
+  },
+  "devDependencies": {
+    "release-it": "^17"
+  }
+}
