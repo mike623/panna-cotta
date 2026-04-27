@@ -1,34 +1,43 @@
 # Tauri Desktop App Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wrap panna-cotta in a macOS/Windows menu bar app using Tauri — Deno backend runs as a sidecar, floating window opens on tray click.
+**Goal:** Wrap panna-cotta in a macOS/Windows menu bar app using Tauri — Deno
+backend runs as a sidecar, floating window opens on tray click.
 
-**Architecture:** Tauri v2 app in `packages/desktop/`. On launch, spawns the `stream-backend` compiled Deno binary as a sidecar. Reads `~/.panna-cotta.port` to determine port. Tray menu shows port, running status, start/stop, launch-at-login toggle, and quit.
+**Architecture:** Tauri v2 app in `packages/desktop/`. On launch, spawns the
+`stream-backend` compiled Deno binary as a sidecar. Reads `~/.panna-cotta.port`
+to determine port. Tray menu shows port, running status, start/stop,
+launch-at-login toggle, and quit.
 
-**Tech Stack:** Tauri v2, Rust, tauri-plugin-autostart, tauri-plugin-shell, deno compile, GitHub Actions
+**Tech Stack:** Tauri v2, Rust, tauri-plugin-autostart, tauri-plugin-shell, deno
+compile, GitHub Actions
 
 ---
 
 ## File Map
 
-| File | Action | Responsibility |
-|------|--------|---------------|
-| `packages/desktop/package.json` | Create | JS workspace metadata for Tauri CLI |
-| `packages/desktop/src-tauri/Cargo.toml` | Create | Rust dependencies (tauri v2, plugins) |
-| `packages/desktop/src-tauri/tauri.conf.json` | Create | App config: window, tray, sidecar allowlist |
-| `packages/desktop/src-tauri/capabilities/default.json` | Create | Tauri v2 capability permissions |
-| `packages/desktop/src-tauri/src/main.rs` | Create | All app logic: sidecar, tray, window, port polling |
-| `packages/desktop/src-tauri/icons/` | Create | App icons (PNG set + .ico) |
-| `packages/desktop/.gitignore` | Create | Ignore target/, node_modules/ |
-| `deno.json` | Modify | Add sidecar compile tasks per target |
-| `.github/workflows/tauri_release.yml` | Create | GHA: compile sidecar → tauri build → upload |
+| File                                                   | Action | Responsibility                                     |
+| ------------------------------------------------------ | ------ | -------------------------------------------------- |
+| `packages/desktop/package.json`                        | Create | JS workspace metadata for Tauri CLI                |
+| `packages/desktop/src-tauri/Cargo.toml`                | Create | Rust dependencies (tauri v2, plugins)              |
+| `packages/desktop/src-tauri/tauri.conf.json`           | Create | App config: window, tray, sidecar allowlist        |
+| `packages/desktop/src-tauri/capabilities/default.json` | Create | Tauri v2 capability permissions                    |
+| `packages/desktop/src-tauri/src/main.rs`               | Create | All app logic: sidecar, tray, window, port polling |
+| `packages/desktop/src-tauri/icons/`                    | Create | App icons (PNG set + .ico)                         |
+| `packages/desktop/.gitignore`                          | Create | Ignore target/, node_modules/                      |
+| `deno.json`                                            | Modify | Add sidecar compile tasks per target               |
+| `.github/workflows/tauri_release.yml`                  | Create | GHA: compile sidecar → tauri build → upload        |
 
 ---
 
 ## Task 1: Scaffold Tauri Package Structure
 
 **Files:**
+
 - Create: `packages/desktop/package.json`
 - Create: `packages/desktop/.gitignore`
 - Create: `packages/desktop/src-tauri/src/main.rs` (stub)
@@ -100,6 +109,7 @@ git commit -m "feat(desktop): scaffold Tauri package structure"
 ## Task 2: Cargo.toml and Rust Toolchain
 
 **Files:**
+
 - Create: `packages/desktop/src-tauri/Cargo.toml`
 - Create: `packages/desktop/src-tauri/build.rs`
 
@@ -149,7 +159,8 @@ Save to `packages/desktop/src-tauri/build.rs`.
 rustc --version && cargo --version
 ```
 
-Expected: both print version strings. If missing: `curl https://sh.rustup.rs -sSf | sh`
+Expected: both print version strings. If missing:
+`curl https://sh.rustup.rs -sSf | sh`
 
 - [ ] **Step 4: Commit**
 
@@ -163,6 +174,7 @@ git commit -m "feat(desktop): add Cargo.toml with Tauri v2 dependencies"
 ## Task 3: tauri.conf.json Configuration
 
 **Files:**
+
 - Create: `packages/desktop/src-tauri/tauri.conf.json`
 - Create: `packages/desktop/src-tauri/capabilities/default.json`
 
@@ -243,7 +255,8 @@ Save to `packages/desktop/src-tauri/capabilities/default.json`.
 
 - [ ] **Step 3: Create placeholder dist directory**
 
-Tauri needs a frontend dist to build even though window loads localhost URL at runtime.
+Tauri needs a frontend dist to build even though window loads localhost URL at
+runtime.
 
 ```bash
 mkdir -p packages/desktop/dist-placeholder
@@ -262,6 +275,7 @@ git commit -m "feat(desktop): add Tauri configuration and capabilities"
 ## Task 4: App Icons
 
 **Files:**
+
 - Create: `packages/desktop/src-tauri/icons/` (PNG set)
 
 - [ ] **Step 1: Generate icons from existing PWA icon**
@@ -279,6 +293,7 @@ convert packages/desktop/src-tauri/icons/icon.png -resize 256x256 packages/deskt
 ```
 
 If ImageMagick not available:
+
 ```bash
 # Use Tauri CLI icon generator from the existing icon
 cd packages/desktop && npx tauri icon ../src-tauri/icons/icon.png
@@ -290,7 +305,8 @@ cd packages/desktop && npx tauri icon ../src-tauri/icons/icon.png
 ls packages/desktop/src-tauri/icons/
 ```
 
-Expected: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.icns` (macOS), `icon.ico` (Windows), `icon.png`.
+Expected: `32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.icns` (macOS),
+`icon.ico` (Windows), `icon.png`.
 
 - [ ] **Step 3: Commit**
 
@@ -304,9 +320,11 @@ git commit -m "feat(desktop): add app icons"
 ## Task 5: main.rs — Sidecar + Port Polling
 
 **Files:**
+
 - Modify: `packages/desktop/src-tauri/src/main.rs`
 
-This task implements sidecar spawning and port file reading. The port file path is `{home}/.panna-cotta.port` (matching the backend).
+This task implements sidecar spawning and port file reading. The port file path
+is `{home}/.panna-cotta.port` (matching the backend).
 
 - [ ] **Step 1: Write main.rs with sidecar and port polling**
 
@@ -524,7 +542,8 @@ Save to `packages/desktop/src-tauri/src/main.rs`.
 cd packages/desktop && cargo build --manifest-path src-tauri/Cargo.toml 2>&1 | head -50
 ```
 
-Expected: Dependency download + compilation. Icon/context errors resolved in later tasks.
+Expected: Dependency download + compilation. Icon/context errors resolved in
+later tasks.
 
 - [ ] **Step 3: Commit**
 
@@ -537,7 +556,8 @@ git commit -m "feat(desktop): implement sidecar spawn, port polling, tray menu"
 
 ## Task 6: Add Sidecar Compile Tasks to deno.json
 
-The Tauri sidecar binary must be named `stream-backend-{target-triple}` and placed at `packages/desktop/src-tauri/binaries/`.
+The Tauri sidecar binary must be named `stream-backend-{target-triple}` and
+placed at `packages/desktop/src-tauri/binaries/`.
 
 - [ ] **Step 1: Read current deno.json**
 
@@ -558,6 +578,7 @@ Edit `deno.json` tasks section to add:
 - [ ] **Step 3: Verify task runs (on your current machine)**
 
 On Apple Silicon Mac:
+
 ```bash
 deno task compile:sidecar:macos-arm
 ls packages/desktop/src-tauri/binaries/
@@ -577,6 +598,7 @@ git commit -m "feat(desktop): add sidecar compile tasks for Tauri targets"
 ## Task 7: GHA Workflow — Tauri Release
 
 **Files:**
+
 - Create: `.github/workflows/tauri_release.yml`
 
 - [ ] **Step 1: Create workflow**
@@ -724,11 +746,13 @@ git commit -m "feat(desktop): add GHA workflow for Tauri release builds"
 - [ ] **Step 1: Compile sidecar for your machine**
 
 On Apple Silicon:
+
 ```bash
 deno task compile:sidecar:macos-arm
 ```
 
-Expected: binary at `packages/desktop/src-tauri/binaries/stream-backend-aarch64-apple-darwin`
+Expected: binary at
+`packages/desktop/src-tauri/binaries/stream-backend-aarch64-apple-darwin`
 
 - [ ] **Step 2: Run Tauri in dev mode**
 
@@ -736,7 +760,8 @@ Expected: binary at `packages/desktop/src-tauri/binaries/stream-backend-aarch64-
 cd packages/desktop && npx tauri dev
 ```
 
-Expected: App launches, tray icon appears. Click icon → floating window opens at localhost port.
+Expected: App launches, tray icon appears. Click icon → floating window opens at
+localhost port.
 
 - [ ] **Step 3: Verify tray menu items**
 
@@ -759,7 +784,8 @@ Expected: App launches, tray icon appears. Click icon → floating window opens 
 cd packages/desktop && npx tauri build
 ```
 
-Expected: `.app` bundle at `packages/desktop/src-tauri/target/release/bundle/macos/Panna Cotta.app`
+Expected: `.app` bundle at
+`packages/desktop/src-tauri/target/release/bundle/macos/Panna Cotta.app`
 
 - [ ] **Step 6: Final commit**
 
@@ -772,10 +798,17 @@ git commit -m "feat(desktop): complete Tauri menu bar app"
 
 ## Notes
 
-**Sidecar binary naming:** Tauri requires the binary to be named exactly `{name}-{target-triple}` in the `binaries/` folder. The `tauri.conf.json` references `"binaries/stream-backend"` (no triple — Tauri appends the current target triple automatically at build time).
+**Sidecar binary naming:** Tauri requires the binary to be named exactly
+`{name}-{target-triple}` in the `binaries/` folder. The `tauri.conf.json`
+references `"binaries/stream-backend"` (no triple — Tauri appends the current
+target triple automatically at build time).
 
-**Port file path:** Backend writes to `{HOME}/.panna-cotta.port`. Rust reads same path via `std::env::var("HOME")` (macOS/Linux) or `USERPROFILE` (Windows).
+**Port file path:** Backend writes to `{HOME}/.panna-cotta.port`. Rust reads
+same path via `std::env::var("HOME")` (macOS/Linux) or `USERPROFILE` (Windows).
 
-**Unsigned app on macOS:** Users will see Gatekeeper warning on first launch. To bypass: right-click the `.app` → Open → Open anyway. Or: `xattr -d com.apple.quarantine "Panna Cotta.app"`.
+**Unsigned app on macOS:** Users will see Gatekeeper warning on first launch. To
+bypass: right-click the `.app` → Open → Open anyway. Or:
+`xattr -d com.apple.quarantine "Panna Cotta.app"`.
 
-**Windows:** The `.exe` installer from Tauri build is NSIS-based. Same unsigned warning from SmartScreen — user clicks "More info" → "Run anyway".
+**Windows:** The `.exe` installer from Tauri build is NSIS-based. Same unsigned
+warning from SmartScreen — user clicks "More info" → "Run anyway".

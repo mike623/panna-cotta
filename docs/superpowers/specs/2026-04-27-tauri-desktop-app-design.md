@@ -1,11 +1,13 @@
 # Tauri Desktop App — Design Spec
 
-**Date:** 2026-04-27  
+**Date:** 2026-04-27\
 **Status:** Approved
 
 ## Goal
 
-Wrap panna-cotta (Deno backend + web frontend) in a native macOS/Windows menu bar app using Tauri. No terminal required. Users launch the app, it lives in the system tray, and clicking opens a floating window.
+Wrap panna-cotta (Deno backend + web frontend) in a native macOS/Windows menu
+bar app using Tauri. No terminal required. Users launch the app, it lives in the
+system tray, and clicking opens a floating window.
 
 ## Architecture
 
@@ -57,6 +59,7 @@ Quit
 ```
 
 When server stopped:
+
 ```
 Port: 31234
 ○ Stopped  [Start]
@@ -76,11 +79,11 @@ Port: 31234
 
 ## Error Handling
 
-| Scenario | Behavior |
-|----------|----------|
-| Sidecar crash | Tray → `○ Stopped [Start]` |
+| Scenario                   | Behavior                           |
+| -------------------------- | ---------------------------------- |
+| Sidecar crash              | Tray → `○ Stopped [Start]`         |
 | Port file missing on start | Retry 3x / 500ms, then `○ Stopped` |
-| Window fails to load | Error page with retry button |
+| Window fails to load       | Error page with retry button       |
 
 ## GHA Release
 
@@ -91,7 +94,8 @@ push tag
   → upload .dmg (macOS) + .exe installer (Windows) to GH release
 ```
 
-No code signing in initial release. Unsigned artifacts — users remove quarantine manually (`xattr -d com.apple.quarantine`) or approve via Gatekeeper dialog.
+No code signing in initial release. Unsigned artifacts — users remove quarantine
+manually (`xattr -d com.apple.quarantine`) or approve via Gatekeeper dialog.
 
 ## Out of Scope (v1)
 
