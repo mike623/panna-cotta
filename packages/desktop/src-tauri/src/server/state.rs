@@ -121,9 +121,53 @@ pub fn default_config() -> StreamDeckConfig {
     }
 }
 
+pub async fn get_active_profile_name(state: &AppState) -> String {
+    tokio::fs::read_to_string(state.active_profile_file())
+        .await
+        .map(|s| s.trim().to_string())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Default".to_string())
+}
+
+pub async fn set_active_profile_name(state: &AppState, name: &str) -> std::io::Result<()> {
+    tokio::fs::write(state.active_profile_file(), safe_profile_name(name)).await
+}
+
+pub async fn read_profile(state: &AppState, name: &str) -> StreamDeckConfig {
+    match tokio::fs::read_to_string(profile_path(state, name)).await {
+        Ok(raw) => toml::from_str(&raw).unwrap_or_else(|_| default_config()),
+        Err(_) => default_config(),
+    }
+}
+
+pub async fn migrate_old_config(state: &AppState) -> std::io::Result<()> {
+    let default_profile = state.profiles_dir().join("Default.toml");
+    if default_profile.exists() {
+        return Ok(());
+    }
+    tokio::fs::create_dir_all(state.profiles_dir()).await?;
+    let content = tokio::fs::read_to_string(state.legacy_config_file())
+        .await
+        .unwrap_or_else(|_| toml::to_string(&default_config()).unwrap());
+    tokio::fs::write(default_profile, content).await?;
+    set_active_profile_name(state, "Default").await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn temp_state() -> (AppState, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState {
+            config_dir: dir.path().to_path_buf(),
+            version_cache: Mutex::new(None),
+            port: Mutex::new(None),
+        };
+        (state, dir)
+    }
 
     #[test]
     fn safe_name_strips_special_chars() {
@@ -145,5 +189,29 @@ mod tests {
         assert_eq!(cfg.buttons.len(), 2);
         assert_eq!(cfg.grid.rows, 2);
         assert_eq!(cfg.grid.cols, 3);
+    }
+
+    #[tokio::test]
+    async fn read_profile_returns_default_when_missing() {
+        let (state, _dir) = temp_state();
+        let cfg = read_profile(&state, "Nonexistent").await;
+        assert_eq!(cfg.grid.rows, 2);
+    }
+
+    #[tokio::test]
+    async fn migrate_creates_default_profile() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        assert!(state.profiles_dir().join("Default.toml").exists());
+        let name = get_active_profile_name(&state).await;
+        assert_eq!(name, "Default");
+    }
+
+    #[tokio::test]
+    async fn migrate_is_idempotent() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        migrate_old_config(&state).await.unwrap();
+        assert!(state.profiles_dir().join("Default.toml").exists());
     }
 }
