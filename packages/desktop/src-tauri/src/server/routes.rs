@@ -142,10 +142,11 @@ async fn create_profile_handler(
     if name.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "name required"}))).into_response();
     }
-    match create_profile(&state, &name, None).await
-        .and(activate_profile(&state, &name).await)
-    {
-        Ok(_) => Json(json!({"ok": true, "name": name})).into_response(),
+    match create_profile(&state, &name, None).await {
+        Ok(_) => match activate_profile(&state, &name).await {
+            Ok(_) => Json(json!({"ok": true, "name": name})).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
+        },
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
     }
 }
@@ -154,7 +155,10 @@ async fn activate_profile_handler(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let name = urlencoding::decode(&name).unwrap_or_default().into_owned();
+    let name = match urlencoding::decode(&name) {
+        Ok(s) => s.into_owned(),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid encoding"}))).into_response(),
+    };
     match activate_profile(&state, &name).await {
         Ok(_) => Json(json!({"ok": true})).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, Json(json!({"error": e}))).into_response(),
@@ -169,7 +173,10 @@ async fn rename_profile_handler(
     Path(name): Path<String>,
     Json(body): Json<RenameBody>,
 ) -> impl IntoResponse {
-    let old = urlencoding::decode(&name).unwrap_or_default().into_owned();
+    let old = match urlencoding::decode(&name) {
+        Ok(s) => s.into_owned(),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid encoding"}))).into_response(),
+    };
     let new = body.new_name.trim().to_string();
     if new.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "newName required"}))).into_response();
@@ -184,7 +191,10 @@ async fn delete_profile_handler(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let name = urlencoding::decode(&name).unwrap_or_default().into_owned();
+    let name = match urlencoding::decode(&name) {
+        Ok(s) => s.into_owned(),
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid encoding"}))).into_response(),
+    };
     match delete_profile(&state, &name).await {
         Ok(_) => Json(json!({"ok": true})).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
