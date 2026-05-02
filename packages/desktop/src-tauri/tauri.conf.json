@@ -3,24 +3,12 @@
   "version": "0.1.5",
   "identifier": "io.mwong.panna-cotta",
   "build": {
-    "beforeBuildCommand": "",
-    "frontendDist": "../dist-placeholder"
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "frontend/dist"
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Panna Cotta",
-        "width": 420,
-        "height": 680,
-        "resizable": true,
-        "decorations": false,
-        "visible": false,
-        "skipTaskbar": true,
-        "alwaysOnTop": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

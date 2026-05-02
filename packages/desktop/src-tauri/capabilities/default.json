@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "default capability",
-  "windows": ["main"],
+  "windows": ["main", "admin", "qr"],
   "permissions": [
     "core:default",
     "autostart:allow-enable",
