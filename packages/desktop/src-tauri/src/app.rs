@@ -3,7 +3,7 @@ use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry,
 };
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -35,7 +35,6 @@ fn read_port() -> Option<u16> {
         .ok()
         .and_then(|s| s.trim().parse::<u16>().ok())
 }
-
 
 fn poll_port_with_retry(app: AppHandle, state: Arc<Mutex<AppState>>) {
     std::thread::spawn(move || {
@@ -76,7 +75,11 @@ fn update_tray_status(app: &AppHandle, menu: &Option<Menu<Wry>>, port: Option<u1
         Some(p) => format!("Port: {p}"),
         None => "Port: --".to_string(),
     };
-    let status_text = if running { "● Running" } else { "○ Stopped" };
+    let status_text = if running {
+        "● Running"
+    } else {
+        "○ Stopped"
+    };
     let btn_text = if running { "Stop" } else { "Start" };
 
     if let Some(item) = menu.get("port") {
@@ -96,7 +99,14 @@ fn update_tray_status(app: &AppHandle, menu: &Option<Menu<Wry>>, port: Option<u1
     }
     // Update tray icon tooltip or title if needed
     if let Some(tray) = app.tray_by_id("main") {
-        let tooltip = format!("Panna Cotta — {}", if running { port_text.as_str() } else { "Stopped" });
+        let tooltip = format!(
+            "Panna Cotta — {}",
+            if running {
+                port_text.as_str()
+            } else {
+                "Stopped"
+            }
+        );
         let _ = tray.set_tooltip(Some(&tooltip));
     }
 }
@@ -126,11 +136,12 @@ fn open_admin(app: &AppHandle) {
             let _ = win.navigate(parsed);
             let _ = win.show();
             let _ = win.set_focus();
-        } else if let Ok(win) = WebviewWindowBuilder::new(app, "admin", WebviewUrl::External(parsed))
-            .title("Panna Cotta — Admin")
-            .inner_size(540.0, 720.0)
-            .decorations(true)
-            .build()
+        } else if let Ok(win) =
+            WebviewWindowBuilder::new(app, "admin", WebviewUrl::External(parsed))
+                .title("Panna Cotta — Admin")
+                .inner_size(540.0, 720.0)
+                .decorations(true)
+                .build()
         {
             let _ = win.show();
         }
@@ -155,7 +166,9 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
     let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
 
     let open = MenuItemBuilder::new("Open").id("open").build(app)?;
-    let admin = MenuItemBuilder::new("Admin Config…").id("admin").build(app)?;
+    let admin = MenuItemBuilder::new("Admin Config…")
+        .id("admin")
+        .build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let port_item = MenuItemBuilder::new("Port: --")
         .id("port")
@@ -200,8 +213,13 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
     // Store menu in state for later updates
     state.lock().unwrap_or_else(|e| e.into_inner()).menu = Some(menu.clone());
 
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
-        .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    let icon =
+        tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")).map_err(|e| {
+            tauri::Error::InvalidIcon(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
