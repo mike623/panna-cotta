@@ -1,158 +1,53 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use crate::server::state::AppState;
 
-pub struct AppState {
-    pub port: Option<u16>,
-    pub running: bool,
+pub struct TrayState {
     pub menu: Option<Menu<Wry>>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            port: None,
-            running: false,
-            menu: None,
-        }
-    }
-}
-
-fn port_file_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    std::path::PathBuf::from(home).join(".panna-cotta.port")
-}
-
-fn read_port() -> Option<u16> {
-    std::fs::read_to_string(port_file_path())
-        .ok()
-        .and_then(|s| s.trim().parse::<u16>().ok())
-}
-
-fn poll_port_with_retry(app: AppHandle, state: Arc<Mutex<AppState>>) {
-    std::thread::spawn(move || {
-        let mut retries = 0;
-        loop {
-            let port = read_port();
-            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-            match port {
-                Some(p) => {
-                    retries = 0;
-                    s.port = Some(p);
-                    s.running = true;
-                    let menu = s.menu.clone();
-                    drop(s);
-                    update_tray_status(&app, &menu, Some(p), true);
-                }
-                None => {
-                    retries += 1;
-                    if retries >= 3 {
-                        s.running = false;
-                        let menu = s.menu.clone();
-                        drop(s);
-                        update_tray_status(&app, &menu, None, false);
-                    } else {
-                        drop(s);
-                    }
-                }
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-    });
 }
 
 fn update_tray_status(app: &AppHandle, menu: &Option<Menu<Wry>>, port: Option<u16>, running: bool) {
     let Some(menu) = menu else { return };
-
-    let port_text = match port {
-        Some(p) => format!("Port: {p}"),
-        None => "Port: --".to_string(),
-    };
-    let status_text = if running {
-        "● Running"
-    } else {
-        "○ Stopped"
-    };
-    let btn_text = if running { "Stop" } else { "Start" };
-
+    let port_text = port.map_or("Port: --".to_string(), |p| format!("Port: {p}"));
+    let status_text = if running { "● Running" } else { "○ Stopped" };
     if let Some(item) = menu.get("port") {
-        if let Some(m) = item.as_menuitem() {
-            let _ = m.set_text(&port_text);
-        }
+        if let Some(m) = item.as_menuitem() { let _ = m.set_text(&port_text); }
     }
     if let Some(item) = menu.get("status") {
-        if let Some(m) = item.as_menuitem() {
-            let _ = m.set_text(status_text);
-        }
+        if let Some(m) = item.as_menuitem() { let _ = m.set_text(status_text); }
     }
-    if let Some(item) = menu.get("start-stop") {
-        if let Some(m) = item.as_menuitem() {
-            let _ = m.set_text(btn_text);
-        }
-    }
-    // Update tray icon tooltip or title if needed
     if let Some(tray) = app.tray_by_id("main") {
-        let tooltip = format!(
-            "Panna Cotta — {}",
-            if running {
-                port_text.as_str()
-            } else {
-                "Stopped"
-            }
-        );
+        let tooltip = format!("Panna Cotta — {}", if running { &port_text } else { "Stopped" });
         let _ = tray.set_tooltip(Some(&tooltip));
     }
 }
 
 pub fn toggle_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
+    if let Some(w) = app.get_webview_window("main") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
         } else {
-            let port = read_port().unwrap_or(30000);
-            if let Ok(url) = format!("http://localhost:{port}/apps/").parse() {
-                let _ = window.navigate(url);
-            }
-            let _ = window.show();
-            let _ = window.set_focus();
+            let _ = w.show();
+            let _ = w.set_focus();
         }
     } else {
-        open_window(app);
+        open_main_window(app);
     }
 }
 
-fn open_admin(app: &AppHandle) {
-    let port = read_port().unwrap_or(30000);
-    let url = format!("http://localhost:{port}/admin");
-    if let Ok(parsed) = url.parse() {
-        if let Some(win) = app.get_webview_window("admin") {
-            let _ = win.navigate(parsed);
-            let _ = win.show();
-            let _ = win.set_focus();
-        } else if let Ok(win) =
-            WebviewWindowBuilder::new(app, "admin", WebviewUrl::External(parsed))
-                .title("Panna Cotta — Admin")
-                .inner_size(540.0, 720.0)
-                .decorations(true)
-                .build()
-        {
-            let _ = win.show();
-        }
-    }
-}
-
-fn open_window(app: &AppHandle) {
-    let port = read_port().unwrap_or(30000);
-    let url = format!("http://localhost:{port}");
-    if let Ok(parsed) = url.parse() {
-        let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(parsed))
+fn open_main_window(app: &AppHandle) {
+    let port = app
+        .state::<Arc<AppState>>()
+        .port.lock().ok()
+        .and_then(|p| *p)
+        .unwrap_or(30000);
+    if let Ok(url) = format!("http://localhost:{port}/apps/").parse() {
+        let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
             .title("Panna Cotta")
             .inner_size(420.0, 680.0)
             .decorations(false)
@@ -161,65 +56,69 @@ fn open_window(app: &AppHandle) {
     }
 }
 
-fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()> {
+fn open_admin(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("admin") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    } else {
+        let _ = WebviewWindowBuilder::new(
+            app,
+            "admin",
+            WebviewUrl::App(std::path::PathBuf::from("index.html")),
+        )
+        .title("Panna Cotta — Admin")
+        .inner_size(760.0, 600.0)
+        .decorations(true)
+        .build();
+    }
+}
+
+fn open_qr_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("qr") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    } else {
+        let _ = WebviewWindowBuilder::new(
+            app,
+            "qr",
+            WebviewUrl::App(std::path::PathBuf::from("qr.html")),
+        )
+        .title("Panna Cotta — QR Code")
+        .inner_size(320.0, 420.0)
+        .resizable(false)
+        .decorations(true)
+        .build();
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     use tauri_plugin_autostart::ManagerExt;
-    let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    let is_autostart = app.autolaunch().is_enabled().unwrap_or(false);
 
     let open = MenuItemBuilder::new("Open").id("open").build(app)?;
-    let admin = MenuItemBuilder::new("Admin Config…")
-        .id("admin")
-        .build(app)?;
+    let admin = MenuItemBuilder::new("Admin Config…").id("admin").build(app)?;
+    let qr = MenuItemBuilder::new("Show QR Code").id("qr").build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let port_item = MenuItemBuilder::new("Port: --")
-        .id("port")
-        .enabled(false)
-        .build(app)?;
-    let status_item = MenuItemBuilder::new("○ Stopped")
-        .id("status")
-        .enabled(false)
-        .build(app)?;
-    let start_stop = MenuItemBuilder::new("Start").id("start-stop").build(app)?;
+    let port_item = MenuItemBuilder::new("Port: --").id("port").enabled(false).build(app)?;
+    let status_item = MenuItemBuilder::new("○ Starting…").id("status").enabled(false).build(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let autostart = CheckMenuItem::with_id(
-        app,
-        "autostart",
-        "Launch at Login",
-        true,
-        is_autostart_enabled,
-        None::<&str>,
-    )?;
+    let autostart = CheckMenuItem::with_id(app, "autostart", "Launch at Login", true, is_autostart, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItemBuilder::new("Quit").id("quit").build(app)?;
     let version_str = format!("v{}", app.package_info().version);
-    let version_item = MenuItemBuilder::new(version_str)
-        .id("version")
-        .enabled(false)
-        .build(app)?;
+    let version_item = MenuItemBuilder::new(version_str).id("version").enabled(false).build(app)?;
+    let quit = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
     let menu = MenuBuilder::new(app)
-        .item(&open)
-        .item(&admin)
-        .item(&sep1)
-        .item(&port_item)
-        .item(&status_item)
-        .item(&start_stop)
-        .item(&sep2)
-        .item(&autostart)
-        .item(&sep3)
-        .item(&version_item)
-        .item(&quit)
+        .item(&open).item(&admin).item(&qr).item(&sep1)
+        .item(&port_item).item(&status_item).item(&sep2)
+        .item(&autostart).item(&sep3).item(&version_item).item(&quit)
         .build()?;
 
-    // Store menu in state for later updates
-    state.lock().unwrap_or_else(|e| e.into_inner()).menu = Some(menu.clone());
+    app.state::<Mutex<TrayState>>()
+        .lock().unwrap().menu = Some(menu.clone());
 
-    let icon =
-        tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")).map_err(|e| {
-            tauri::Error::InvalidIcon(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            ))
-        })?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+        .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)
@@ -227,14 +126,8 @@ fn build_tray(app: &AppHandle, state: Arc<Mutex<AppState>>) -> tauri::Result<()>
         .menu(&menu)
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                toggle_window(app);
+            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                toggle_window(tray.app_handle());
             }
         })
         .build(app)?;
@@ -246,45 +139,60 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "open" => toggle_window(app),
         "admin" => open_admin(app),
-        "quit" => {
-            app.exit(0);
-        }
-        "start-stop" => {
-            // Start/stop logic will be implemented with native Rust server in subsequent tasks
-        }
+        "qr" => open_qr_window(app),
         "autostart" => {
             use tauri_plugin_autostart::ManagerExt;
-            let autolaunch = app.autolaunch();
-            let enabled = autolaunch.is_enabled().unwrap_or(false);
-            if enabled {
-                let _ = autolaunch.disable();
-            } else {
-                let _ = autolaunch.enable();
-            }
+            let al = app.autolaunch();
+            if al.is_enabled().unwrap_or(false) { let _ = al.disable(); } else { let _ = al.enable(); }
         }
+        "quit" => app.exit(0),
         _ => {}
     }
 }
 
 pub fn run() {
-    let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::default()));
-    let state_for_setup = Arc::clone(&state);
+    let app_state = Arc::new(AppState::new());
+    let tray_state = Mutex::new(TrayState { menu: None });
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
-        .manage(state)
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
+        .manage(app_state.clone())
+        .manage(tray_state)
+        .invoke_handler(tauri::generate_handler![
+            crate::commands::config::get_config,
+            crate::commands::config::save_config,
+            crate::commands::config::get_default_config,
+            crate::commands::config::list_profiles_cmd,
+            crate::commands::config::create_profile_cmd,
+            crate::commands::config::activate_profile_cmd,
+            crate::commands::config::rename_profile_cmd,
+            crate::commands::config::delete_profile_cmd,
+            crate::commands::config::open_config_folder,
+            crate::commands::system::execute_command,
+            crate::commands::system::open_app,
+            crate::commands::system::open_url,
+            crate::commands::version::get_version_info,
+            crate::commands::server_info::get_server_info,
+        ])
         .setup(move |app| {
-            let state_for_tray = Arc::clone(&state_for_setup);
-            let state_for_poll = Arc::clone(&state_for_setup);
-
-            build_tray(app.handle(), state_for_tray)?;
-            poll_port_with_retry(app.handle().clone(), state_for_poll);
+            build_tray(app.handle())?;
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            let app_handle = app.handle().clone();
+            let state = app_state.clone();
+
+            tauri::async_runtime::spawn(async move {
+                match crate::server::start(state.clone()).await {
+                    Ok(port) => {
+                        let tray_state = app_handle.state::<Mutex<TrayState>>();
+                        let menu = tray_state.lock().unwrap().menu.clone();
+                        update_tray_status(&app_handle, &menu, Some(port), true);
+                    }
+                    Err(e) => eprintln!("Server failed to start: {e}"),
+                }
+            });
 
             Ok(())
         })
