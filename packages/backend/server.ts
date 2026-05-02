@@ -12,6 +12,7 @@ import {
 } from "./services/system.ts";
 import {
   configSchema,
+  defaultConfig,
   saveStreamDeckConfig,
   useStreamDeckConfig,
 } from "./services/config.ts";
@@ -64,7 +65,13 @@ app.get("/api/check-update", async (c) => {
 
 app.get("/api/config", async (c) => {
   const config = await useStreamDeckConfig();
+  c.header("Cache-Control", "no-store");
   return c.json(config);
+});
+
+app.get("/api/config/default", (c) => {
+  c.header("Cache-Control", "no-store");
+  return c.json(defaultConfig);
 });
 
 app.put("/api/config", async (c) => {
@@ -174,6 +181,7 @@ app.get("/admin", (c) => {
 
     <div class="save-row">
       <button onclick="saveConfig()">Save</button>
+      <button class="danger" onclick="resetToDefault()">Reset to Default</button>
       <span id="toast" class="toast"></span>
     </div>
   </div>
@@ -274,7 +282,24 @@ app.get("/admin", (c) => {
           showToast(err.error || 'Save failed', false);
         } else {
           showToast('Saved!', true);
+          await loadConfig();
         }
+      } catch {
+        showToast('Network error', false);
+      }
+    }
+
+    async function resetToDefault() {
+      if (!confirm('Reset all buttons and grid to default? This will overwrite your current config.')) return;
+      try {
+        const res = await fetch('/api/config/default');
+        if (!res.ok) { showToast('Failed to load defaults', false); return; }
+        const config = await res.json();
+        document.getElementById('grid-rows').value = config.grid.rows;
+        document.getElementById('grid-cols').value = config.grid.cols;
+        buttons = config.buttons || [];
+        renderButtons();
+        showToast('Defaults loaded — click Save to apply', true);
       } catch {
         showToast('Network error', false);
       }
