@@ -11,8 +11,14 @@ import {
   openUrl,
 } from "./services/system.ts";
 import {
+  activateProfile,
+  configDir,
   configSchema,
+  createProfile,
   defaultConfig,
+  deleteProfile,
+  listProfiles,
+  renameProfile,
   saveStreamDeckConfig,
   useStreamDeckConfig,
 } from "./services/config.ts";
@@ -63,6 +69,87 @@ app.get("/api/check-update", async (c) => {
   }
 });
 
+// --- Profile routes ---
+
+app.get("/api/profiles", async (c) => {
+  return c.json(await listProfiles());
+});
+
+app.post("/api/profiles", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+  const name = (body as { name?: string })?.name?.trim();
+  if (!name) return c.json({ error: "name required" }, 400);
+  try {
+    await createProfile(name);
+    await activateProfile(name);
+    return c.json({ ok: true, name });
+  } catch (err) {
+    return c.json({ error: String(err) }, 400);
+  }
+});
+
+app.post("/api/profiles/:name/activate", async (c) => {
+  const name = decodeURIComponent(c.req.param("name"));
+  try {
+    await activateProfile(name);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: String(err) }, 404);
+  }
+});
+
+app.patch("/api/profiles/:name", async (c) => {
+  const oldName = decodeURIComponent(c.req.param("name"));
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+  const newName = (body as { newName?: string })?.newName?.trim();
+  if (!newName) return c.json({ error: "newName required" }, 400);
+  try {
+    await renameProfile(oldName, newName);
+    return c.json({ ok: true, name: newName });
+  } catch (err) {
+    return c.json({ error: String(err) }, 400);
+  }
+});
+
+app.delete("/api/profiles/:name", async (c) => {
+  const name = decodeURIComponent(c.req.param("name"));
+  try {
+    await deleteProfile(name);
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: String(err) }, 400);
+  }
+});
+
+app.post("/api/open-config-folder", async (c) => {
+  const dir = configDir();
+  try {
+    const os = Deno.build.os;
+    const cmd = os === "darwin"
+      ? ["open", dir]
+      : os === "windows"
+      ? ["explorer", dir]
+      : ["xdg-open", dir];
+    const proc = new Deno.Command(cmd[0], { args: cmd.slice(1) });
+    await proc.output();
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// --- Config routes ---
+
 app.get("/api/config", async (c) => {
   const config = await useStreamDeckConfig();
   c.header("Cache-Control", "no-store");
@@ -108,211 +195,427 @@ app.get("/admin", (c) => {
   <title>Panna Cotta — Admin</title>
   <meta name="color-scheme" content="dark">
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 1.5rem; }
-    .container { max-width: 600px; margin: 0 auto; }
-    h1 { margin: 0 0 1.5rem; font-size: 1.5rem; }
-    h2 { margin: 1.5rem 0 0.75rem; font-size: 0.8rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.08em; }
-    .card { background: #1a1a2e; padding: 1rem; border-radius: 0.75rem; margin-bottom: 0.5rem; }
-    .row { display: flex; gap: 0.75rem; align-items: flex-start; }
-    .field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
-    label { font-size: 0.75rem; color: #888; }
-    input, select { background: #2a2a3e; border: 1px solid #3a3a5e; color: #eee; padding: 0.5rem 0.75rem; border-radius: 0.5rem; width: 100%; font-size: 0.9rem; }
-    input:focus, select:focus { outline: 1px solid #818cf8; border-color: #818cf8; }
-    button { background: #4f46e5; color: #fff; border: none; padding: 0.5rem 1.25rem; border-radius: 0.5rem; cursor: pointer; font-size: 0.9rem; }
-    button:hover { background: #6366f1; }
-    button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; padding: 0.4rem 0.75rem; }
-    button.danger:hover { background: #7f1d1d; }
-    button.ghost { background: #2a2a3e; color: #eee; padding: 0.4rem 0.6rem; }
-    button.ghost:hover { background: #3a3a5e; }
-    button:disabled { opacity: 0.3; cursor: default; }
-    .btn-row { margin-top: 0.75rem; display: flex; gap: 0.5rem; justify-content: flex-end; }
-    .save-row { margin-top: 1.5rem; display: flex; align-items: center; gap: 1rem; }
-    .toast { font-size: 0.9rem; }
-    .toast.ok { color: #4ade80; }
-    .toast.err { color: #f87171; }
-    .grid-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-    a { color: #818cf8; text-decoration: none; font-size: 0.9rem; }
-    a:hover { text-decoration: underline; }
-    .back { display: block; margin-bottom: 1.5rem; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,sans-serif;background:#1c1c1e;color:#f0f0f0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+    /* Top bar */
+    .topbar{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 1rem;background:#141416;border-bottom:1px solid #3a3a3c;flex-shrink:0}
+    .back-link{color:#666;text-decoration:none;font-size:0.9rem;padding:0.25rem 0.4rem;border-radius:0.3rem}
+    .back-link:hover{color:#f0f0f0;background:#2a2a2c}
+    .app-title{font-size:0.9rem;font-weight:600;white-space:nowrap}
+    .profile-section{display:flex;align-items:center;gap:0.3rem;margin-left:0.5rem}
+    .profile-select{background:#2a2a2c;border:1px solid #3a3a3c;color:#f0f0f0;padding:0.28rem 0.5rem;border-radius:0.35rem;font-size:0.8rem;cursor:pointer;max-width:120px}
+    .icon-btn{background:#2a2a2c;border:1px solid #3a3a3c;color:#aaa;padding:0.28rem 0.55rem;border-radius:0.35rem;cursor:pointer;font-size:0.75rem;line-height:1}
+    .icon-btn:hover{background:#3a3a3c;color:#f0f0f0}
+    .spacer{flex:1}
+    .btn{background:#4f46e5;color:#fff;border:none;padding:0.35rem 0.85rem;border-radius:0.35rem;cursor:pointer;font-size:0.8rem;white-space:nowrap}
+    .btn:hover{background:#6366f1}
+    .btn.secondary{background:#2a2a2c;border:1px solid #3a3a3c;color:#ccc}
+    .btn.secondary:hover{background:#3a3a3c;color:#f0f0f0}
+    .btn.danger{background:transparent;color:#f87171;border:1px solid #3a3a3c}
+    .btn.danger:hover{background:#2e1a1a;border-color:#f87171}
+
+    /* Layout */
+    .main{display:flex;flex:1;overflow:hidden}
+
+    /* Left panel */
+    .left-panel{flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:0.875rem;gap:0.75rem;min-width:0}
+    .section-label{font-size:0.7rem;color:#666;text-transform:uppercase;letter-spacing:0.07em;font-weight:600}
+
+    /* Grid settings */
+    .grid-settings{display:flex;align-items:center;gap:0.6rem;font-size:0.8rem;color:#888}
+    .grid-settings input{background:#2a2a2c;border:1px solid #3a3a3c;color:#f0f0f0;padding:0.25rem 0.4rem;border-radius:0.3rem;width:3.2rem;font-size:0.8rem;text-align:center}
+
+    /* Grid preview */
+    .grid-preview{display:grid;gap:0.45rem;background:#252527;padding:0.875rem;border-radius:0.6rem;width:fit-content}
+    .grid-cell{width:72px;height:72px;background:#3a3a3c;border-radius:0.5rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;border:2px solid transparent;transition:border-color 0.1s,background 0.1s;overflow:hidden;padding:4px;position:relative}
+    .grid-cell:hover{background:#464648}
+    .grid-cell.selected{border-color:#4f46e5;background:#1e1a3a}
+    .grid-cell.empty{opacity:0.35}
+    .grid-cell.empty:hover{opacity:0.6}
+    .cell-icon{font-size:1.5rem;line-height:1}
+    .cell-label{font-size:0.58rem;color:#ccc;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:66px}
+    .cell-idx{position:absolute;top:3px;right:4px;font-size:0.5rem;color:#555}
+
+    /* Divider */
+    .divider{height:1px;background:#3a3a3c;flex-shrink:0}
+
+    /* Editor panel */
+    .editor-panel{background:#252527;border-radius:0.6rem;padding:0.75rem}
+    .editor-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem}
+    .editor-title{font-size:0.75rem;color:#888;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
+    .editor-fields{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem}
+    .field{display:flex;flex-direction:column;gap:0.2rem}
+    .field label{font-size:0.7rem;color:#777}
+    .field input,.field select{background:#1c1c1e;border:1px solid #3a3a3c;color:#f0f0f0;padding:0.32rem 0.55rem;border-radius:0.35rem;font-size:0.82rem;width:100%}
+    .field input:focus,.field select:focus{outline:1px solid #4f46e5;border-color:#4f46e5}
+    .field.full{grid-column:1/-1}
+    .editor-actions{display:flex;gap:0.4rem;margin-top:0.55rem}
+
+    /* Right panel */
+    .right-panel{width:220px;border-left:1px solid #3a3a3c;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+    .right-header{padding:0.65rem 0.65rem 0.5rem;flex-shrink:0;border-bottom:1px solid #3a3a3c}
+    .search-input{width:100%;background:#2a2a2c;border:1px solid #3a3a3c;color:#f0f0f0;padding:0.35rem 0.65rem;border-radius:0.35rem;font-size:0.8rem}
+    .search-input::placeholder{color:#555}
+    .search-input:focus{outline:1px solid #4f46e5;border-color:#4f46e5}
+    .actions-list{flex:1;overflow-y:auto;padding:0.4rem 0.4rem 0.75rem}
+    .action-group{margin-top:0.35rem}
+    .action-group-header{display:flex;align-items:center;gap:0.35rem;font-size:0.68rem;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:0.07em;padding:0.35rem 0.4rem 0.2rem}
+    .action-group-items{display:flex;flex-direction:column;gap:1px}
+    .action-item{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.6rem;border-radius:0.35rem;font-size:0.8rem;color:#bbb;cursor:pointer}
+    .action-item:hover{background:#2a2a2c;color:#f0f0f0}
+    .action-item-icon{width:1.1rem;text-align:center;font-size:0.9rem;flex-shrink:0}
+
+    /* Toast */
+    .toast-bar{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#2a2a2c;border:1px solid #3a3a3c;padding:0.45rem 1.1rem;border-radius:2rem;font-size:0.82rem;opacity:0;transition:opacity 0.2s;pointer-events:none;white-space:nowrap}
+    .toast-bar.show{opacity:1}
+    .toast-bar.ok{border-color:#4ade80;color:#4ade80}
+    .toast-bar.err{border-color:#f87171;color:#f87171}
   </style>
 </head>
 <body>
-  <div class="container">
-    <a href="/" class="back">← Back</a>
-    <h1>Admin</h1>
+  <div class="topbar">
+    <a href="/" class="back-link">←</a>
+    <span class="app-title">Panna Cotta</span>
+    <div class="profile-section">
+      <select class="profile-select" id="profile-select" onchange="switchProfile(this.value)"></select>
+      <button class="icon-btn" onclick="newProfile()" title="New profile">+</button>
+      <button class="icon-btn" onclick="renameCurrentProfile()" title="Rename profile">✎</button>
+      <button class="icon-btn" onclick="deleteCurrentProfile()" title="Delete profile">×</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn secondary" onclick="openConfigFolder()">📂 Config Folder</button>
+    <button class="btn secondary" onclick="resetToDefault()">Reset</button>
+    <button class="btn" onclick="saveConfig()">Save</button>
+  </div>
 
-    <h2>Grid</h2>
-    <div class="card">
-      <div class="grid-fields">
-        <div class="field">
-          <label>Rows</label>
-          <input type="number" id="grid-rows" min="1" max="10" value="2">
+  <div class="main">
+    <div class="left-panel">
+      <div class="grid-settings">
+        <span class="section-label">Grid</span>
+        <span style="color:#666">Rows</span>
+        <input type="number" id="grid-rows" min="1" max="10" value="2" oninput="renderGrid()">
+        <span style="color:#666">Cols</span>
+        <input type="number" id="grid-cols" min="1" max="10" value="3" oninput="renderGrid()">
+      </div>
+      <div id="grid-preview" class="grid-preview"></div>
+      <div class="divider"></div>
+      <div class="editor-panel">
+        <div class="editor-header">
+          <span class="editor-title" id="editor-title">Add Button</span>
         </div>
-        <div class="field">
-          <label>Cols</label>
-          <input type="number" id="grid-cols" min="1" max="10" value="3">
+        <div class="editor-fields">
+          <div class="field"><label>Name</label><input type="text" id="btn-name" placeholder="GitHub"></div>
+          <div class="field"><label>Type</label>
+            <select id="btn-type">
+              <option value="browser">browser</option>
+              <option value="system">system</option>
+            </select>
+          </div>
+          <div class="field"><label>Icon (Lucide name)</label><input type="text" id="btn-icon" placeholder="github"></div>
+          <div class="field full"><label>Action (URL or app name)</label><input type="text" id="btn-action" placeholder="https://github.com"></div>
+        </div>
+        <div class="editor-actions">
+          <button class="btn" id="editor-save-btn" onclick="editorSave()">Add</button>
+          <button class="btn secondary" onclick="editorClear()">Clear</button>
+          <button class="btn danger" id="editor-delete-btn" onclick="editorDelete()" style="display:none">Delete</button>
         </div>
       </div>
     </div>
 
-    <h2>Buttons</h2>
-    <div id="buttons-list"></div>
-
-    <div class="card">
-      <h2 style="margin-top:0">Add Button</h2>
-      <div class="row">
-        <div class="field"><label>Name</label><input type="text" id="new-name" placeholder="GitHub"></div>
-        <div class="field"><label>Type</label>
-          <select id="new-type">
-            <option value="browser">browser</option>
-            <option value="system">system</option>
-          </select>
-        </div>
+    <div class="right-panel">
+      <div class="right-header">
+        <input class="search-input" id="search" type="search" placeholder="Search actions…" oninput="filterActions(this.value)">
       </div>
-      <div class="row" style="margin-top:0.5rem">
-        <div class="field"><label>Icon (Lucide name)</label><input type="text" id="new-icon" placeholder="github"></div>
-        <div class="field"><label>Action (URL or app name)</label><input type="text" id="new-action" placeholder="https://github.com"></div>
-      </div>
-      <div class="btn-row" style="justify-content:flex-start;margin-top:0.75rem">
-        <button onclick="addButton()">Add Button</button>
-      </div>
-    </div>
-
-    <div class="save-row">
-      <button onclick="saveConfig()">Save</button>
-      <button class="danger" onclick="resetToDefault()">Reset to Default</button>
-      <span id="toast" class="toast"></span>
+      <div class="actions-list" id="actions-list"></div>
     </div>
   </div>
 
+  <div class="toast-bar" id="toast-bar"></div>
+
   <script>
     let buttons = [];
+    let selectedIndex = -1;
+    let profiles = [];
+    let activeProfile = 'Default';
 
-    function escHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    const ACTION_GROUPS = [
+      { name: 'Browser', icon: '🌐', items: [
+        { name: 'Open URL', icon: '🔗', type: 'browser', action: 'https://', iconName: 'link' },
+      ]},
+      { name: 'System', icon: '⚙️', items: [
+        { name: 'Open App', icon: '🖥', type: 'system', action: '', iconName: 'terminal' },
+        { name: 'Volume Up', icon: '🔊', type: 'system', action: 'volume-up', iconName: 'volume-2' },
+        { name: 'Volume Down', icon: '🔉', type: 'system', action: 'volume-down', iconName: 'volume-1' },
+        { name: 'Mute Toggle', icon: '🔇', type: 'system', action: 'volume-mute', iconName: 'volume-x' },
+        { name: 'Brightness Up', icon: '☀️', type: 'system', action: 'brightness-up', iconName: 'sun' },
+        { name: 'Brightness Down', icon: '🌙', type: 'system', action: 'brightness-down', iconName: 'moon' },
+        { name: 'Sleep', icon: '💤', type: 'system', action: 'sleep', iconName: 'power' },
+        { name: 'Lock Screen', icon: '🔒', type: 'system', action: 'lock', iconName: 'lock' },
+      ]},
+    ];
+
+    const ICON_MAP = {
+      github:'⬡',link:'🔗',globe:'🌐',chrome:'🌐',terminal:'🖥',
+      'volume-2':'🔊','volume-1':'🔉','volume-x':'🔇',sun:'☀️',moon:'🌙',
+      power:'⏻',lock:'🔒',calculator:'🧮',youtube:'▶',twitch:'📺',
+      reddit:'🔴',mail:'✉️',spotify:'♫',discord:'💬',code:'</>',
+      'message-square':'💬',
+    };
+
+    function iconEmoji(name) {
+      return ICON_MAP[name] || (name ? name.slice(0,2).toUpperCase() : '?');
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function init() {
+      await loadProfiles();
+      await loadConfig();
+      renderActionGroups(ACTION_GROUPS);
+    }
+
+    async function loadProfiles() {
+      const res = await fetch('/api/profiles');
+      if (!res.ok) return;
+      profiles = await res.json();
+      const active = profiles.find(p => p.isActive);
+      activeProfile = active ? active.name : profiles[0]?.name ?? 'Default';
+      renderProfileSelect();
+    }
+
+    function renderProfileSelect() {
+      const sel = document.getElementById('profile-select');
+      sel.innerHTML = profiles.map(p =>
+        \`<option value="\${escHtml(p.name)}" \${p.isActive ? 'selected' : ''}>\${escHtml(p.name)}</option>\`
+      ).join('');
+    }
+
+    async function switchProfile(name) {
+      const res = await fetch('/api/profiles/' + encodeURIComponent(name) + '/activate', { method: 'POST' });
+      if (!res.ok) { toast('Failed to switch profile', false); return; }
+      activeProfile = name;
+      profiles = profiles.map(p => ({ ...p, isActive: p.name === name }));
+      await loadConfig();
+    }
+
+    async function newProfile() {
+      const name = prompt('New profile name:');
+      if (!name || !name.trim()) return;
+      const res = await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() })
+      });
+      if (!res.ok) { toast((await res.json().catch(()=>({}))).error || 'Could not create profile', false); return; }
+      await loadProfiles();
+      await loadConfig();
+    }
+
+    async function renameCurrentProfile() {
+      const newName = prompt('Rename "' + activeProfile + '" to:');
+      if (!newName || !newName.trim() || newName.trim() === activeProfile) return;
+      const res = await fetch('/api/profiles/' + encodeURIComponent(activeProfile), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName: newName.trim() })
+      });
+      if (!res.ok) { toast('Could not rename', false); return; }
+      activeProfile = newName.trim();
+      await loadProfiles();
+    }
+
+    async function deleteCurrentProfile() {
+      if (!confirm('Delete profile "' + activeProfile + '"? This cannot be undone.')) return;
+      const res = await fetch('/api/profiles/' + encodeURIComponent(activeProfile), { method: 'DELETE' });
+      if (!res.ok) { toast((await res.json().catch(()=>({}))).error || 'Could not delete', false); return; }
+      await loadProfiles();
+      await loadConfig();
     }
 
     async function loadConfig() {
-      try {
-        const res = await fetch('/api/config');
-        if (!res.ok) { showToast('Failed to load config', false); return; }
-        const config = await res.json();
-        document.getElementById('grid-rows').value = config.grid.rows;
-        document.getElementById('grid-cols').value = config.grid.cols;
-        buttons = config.buttons || [];
-        renderButtons();
-      } catch {
-        showToast('Network error', false);
+      const res = await fetch('/api/config');
+      if (!res.ok) { toast('Failed to load config', false); return; }
+      const config = await res.json();
+      document.getElementById('grid-rows').value = config.grid.rows;
+      document.getElementById('grid-cols').value = config.grid.cols;
+      buttons = config.buttons || [];
+      selectedIndex = -1;
+      editorClear();
+      renderGrid();
+    }
+
+    function renderGrid() {
+      const rows = Math.max(1, parseInt(document.getElementById('grid-rows').value) || 2);
+      const cols = Math.max(1, parseInt(document.getElementById('grid-cols').value) || 3);
+      const preview = document.getElementById('grid-preview');
+      preview.style.gridTemplateColumns = 'repeat(' + cols + ', 72px)';
+      const total = rows * cols;
+      preview.innerHTML = '';
+      for (let i = 0; i < total; i++) {
+        const btn = buttons[i];
+        const cell = document.createElement('div');
+        cell.className = 'grid-cell' + (btn ? '' : ' empty') + (selectedIndex === i ? ' selected' : '');
+        cell.onclick = () => selectCell(i);
+        if (btn) {
+          cell.innerHTML = '<div class="cell-icon">' + iconEmoji(btn.icon) + '</div><div class="cell-label">' + escHtml(btn.name) + '</div>';
+        } else {
+          cell.innerHTML = '<div class="cell-icon" style="opacity:0.4;font-size:1.1rem">+</div>';
+        }
+        cell.innerHTML += '<div class="cell-idx">' + (i + 1) + '</div>';
+        preview.appendChild(cell);
       }
     }
 
-    function renderButtons() {
-      const list = document.getElementById('buttons-list');
-      list.innerHTML = '';
-      buttons.forEach((btn, i) => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = \`
-          <div class="row">
-            <div class="field"><label>Name</label><input type="text" value="\${escHtml(btn.name)}" oninput="buttons[\${i}].name=this.value"></div>
-            <div class="field"><label>Type</label>
-              <select onchange="buttons[\${i}].type=this.value">
-                <option value="browser" \${btn.type==='browser'?'selected':''}>browser</option>
-                <option value="system" \${btn.type==='system'?'selected':''}>system</option>
-              </select>
-            </div>
-          </div>
-          <div class="row" style="margin-top:0.5rem">
-            <div class="field"><label>Icon</label><input type="text" value="\${escHtml(btn.icon)}" oninput="buttons[\${i}].icon=this.value"></div>
-            <div class="field"><label>Action</label><input type="text" value="\${escHtml(btn.action)}" oninput="buttons[\${i}].action=this.value"></div>
-          </div>
-          <div class="btn-row">
-            <button class="ghost" onclick="moveButton(\${i},-1)" \${i===0?'disabled':''}>↑</button>
-            <button class="ghost" onclick="moveButton(\${i},1)" \${i===buttons.length-1?'disabled':''}>↓</button>
-            <button class="danger" onclick="deleteButton(\${i})">Delete</button>
-          </div>
-        \`;
-        list.appendChild(card);
-      });
+    function selectCell(i) {
+      const btn = buttons[i];
+      if (btn) {
+        selectedIndex = i;
+        document.getElementById('btn-name').value = btn.name;
+        document.getElementById('btn-type').value = btn.type;
+        document.getElementById('btn-icon').value = btn.icon;
+        document.getElementById('btn-action').value = btn.action;
+        document.getElementById('editor-title').textContent = 'Edit: ' + btn.name;
+        document.getElementById('editor-save-btn').textContent = 'Update';
+        document.getElementById('editor-delete-btn').style.display = '';
+      } else {
+        selectedIndex = i;
+        document.getElementById('btn-name').value = '';
+        document.getElementById('btn-type').value = 'browser';
+        document.getElementById('btn-icon').value = '';
+        document.getElementById('btn-action').value = '';
+        document.getElementById('editor-title').textContent = 'Add to slot ' + (i + 1);
+        document.getElementById('editor-save-btn').textContent = 'Add';
+        document.getElementById('editor-delete-btn').style.display = 'none';
+        document.getElementById('btn-name').focus();
+      }
+      renderGrid();
     }
 
-    function moveButton(i, dir) {
-      const j = i + dir;
-      if (j < 0 || j >= buttons.length) return;
-      [buttons[i], buttons[j]] = [buttons[j], buttons[i]];
-      renderButtons();
+    function editorClear() {
+      selectedIndex = -1;
+      document.getElementById('btn-name').value = '';
+      document.getElementById('btn-type').value = 'browser';
+      document.getElementById('btn-icon').value = '';
+      document.getElementById('btn-action').value = '';
+      document.getElementById('editor-title').textContent = 'Add Button';
+      document.getElementById('editor-save-btn').textContent = 'Add';
+      document.getElementById('editor-delete-btn').style.display = 'none';
+      renderGrid();
     }
 
-    function deleteButton(i) {
-      buttons.splice(i, 1);
-      renderButtons();
+    function editorSave() {
+      const name = document.getElementById('btn-name').value.trim();
+      const type = document.getElementById('btn-type').value;
+      const icon = document.getElementById('btn-icon').value.trim();
+      const action = document.getElementById('btn-action').value.trim();
+      if (!name || !icon || !action) { toast('Fill in all fields', false); return; }
+      const btn = { name, type, icon, action };
+      if (selectedIndex >= 0 && buttons[selectedIndex]) {
+        buttons[selectedIndex] = btn;
+      } else if (selectedIndex >= 0) {
+        while (buttons.length < selectedIndex) buttons.push(null);
+        buttons[selectedIndex] = btn;
+        buttons = buttons.filter(Boolean);
+      } else {
+        buttons.push(btn);
+      }
+      editorClear();
     }
 
-    function addButton() {
-      const name = document.getElementById('new-name').value.trim();
-      const type = document.getElementById('new-type').value;
-      const icon = document.getElementById('new-icon').value.trim();
-      const action = document.getElementById('new-action').value.trim();
-      if (!name || !icon || !action) { showToast('Fill in all fields', false); return; }
-      buttons.push({ name, type, icon, action });
-      document.getElementById('new-name').value = '';
-      document.getElementById('new-icon').value = '';
-      document.getElementById('new-action').value = '';
-      renderButtons();
+    function editorDelete() {
+      if (selectedIndex < 0 || !buttons[selectedIndex]) return;
+      buttons.splice(selectedIndex, 1);
+      editorClear();
     }
 
     async function saveConfig() {
       const rows = parseInt(document.getElementById('grid-rows').value, 10);
       const cols = parseInt(document.getElementById('grid-cols').value, 10);
-      if (isNaN(rows) || isNaN(cols)) { showToast('Rows and cols must be numbers', false); return; }
-      const config = { grid: { rows, cols }, buttons };
-      try {
-        const res = await fetch('/api/config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(config),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          showToast(err.error || 'Save failed', false);
-        } else {
-          showToast('Saved!', true);
-          await loadConfig();
-        }
-      } catch {
-        showToast('Network error', false);
+      if (isNaN(rows) || isNaN(cols)) { toast('Invalid grid dimensions', false); return; }
+      const config = { grid: { rows, cols }, buttons: buttons.filter(Boolean) };
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        toast((await res.json().catch(()=>({}))).error || 'Save failed', false);
+      } else {
+        toast('Saved!', true);
+        await loadConfig();
       }
     }
 
     async function resetToDefault() {
-      if (!confirm('Reset all buttons and grid to default? This will overwrite your current config.')) return;
-      try {
-        const res = await fetch('/api/config/default');
-        if (!res.ok) { showToast('Failed to load defaults', false); return; }
-        const config = await res.json();
-        document.getElementById('grid-rows').value = config.grid.rows;
-        document.getElementById('grid-cols').value = config.grid.cols;
-        buttons = config.buttons || [];
-        renderButtons();
-        showToast('Defaults loaded — click Save to apply', true);
-      } catch {
-        showToast('Network error', false);
+      if (!confirm('Reset buttons and grid to defaults? This overwrites the current profile.')) return;
+      const res = await fetch('/api/config/default');
+      if (!res.ok) { toast('Failed to load defaults', false); return; }
+      const config = await res.json();
+      document.getElementById('grid-rows').value = config.grid.rows;
+      document.getElementById('grid-cols').value = config.grid.cols;
+      buttons = config.buttons || [];
+      editorClear();
+      toast('Defaults loaded — click Save to apply', true);
+    }
+
+    async function openConfigFolder() {
+      const res = await fetch('/api/open-config-folder', { method: 'POST' });
+      if (!res.ok) toast('Could not open folder', false);
+    }
+
+    function renderActionGroups(groups, filter) {
+      const list = document.getElementById('actions-list');
+      list.innerHTML = '';
+      const q = (filter || '').toLowerCase();
+      for (const group of groups) {
+        const items = q ? group.items.filter(i => i.name.toLowerCase().includes(q)) : group.items;
+        if (!items.length) continue;
+        const groupEl = document.createElement('div');
+        groupEl.className = 'action-group';
+        const hdr = document.createElement('div');
+        hdr.className = 'action-group-header';
+        hdr.textContent = group.icon + ' ' + group.name;
+        groupEl.appendChild(hdr);
+        const itemsEl = document.createElement('div');
+        itemsEl.className = 'action-group-items';
+        for (const item of items) {
+          const el = document.createElement('div');
+          el.className = 'action-item';
+          el.innerHTML = '<span class="action-item-icon">' + item.icon + '</span>' + escHtml(item.name);
+          el.onclick = () => useTemplate(item);
+          itemsEl.appendChild(el);
+        }
+        groupEl.appendChild(itemsEl);
+        list.appendChild(groupEl);
       }
     }
 
-    function showToast(msg, ok) {
-      const toast = document.getElementById('toast');
-      toast.textContent = msg;
-      toast.className = 'toast ' + (ok ? 'ok' : 'err');
-      setTimeout(() => { toast.textContent = ''; toast.className = 'toast'; }, 3000);
+    function filterActions(q) { renderActionGroups(ACTION_GROUPS, q); }
+
+    function useTemplate(t) {
+      document.getElementById('btn-name').value = t.name;
+      document.getElementById('btn-type').value = t.type;
+      document.getElementById('btn-icon').value = t.iconName;
+      document.getElementById('btn-action').value = t.action;
+      if (selectedIndex < 0) {
+        document.getElementById('editor-title').textContent = 'Add Button';
+        document.getElementById('editor-save-btn').textContent = 'Add';
+      }
+      document.getElementById('btn-name').focus();
     }
 
-    loadConfig();
+    function toast(msg, ok) {
+      const el = document.getElementById('toast-bar');
+      el.textContent = msg;
+      el.className = 'toast-bar show ' + (ok ? 'ok' : 'err');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => { el.className = 'toast-bar'; }, 2500);
+    }
+
+    init();
   </script>
 </body>
 </html>`);
