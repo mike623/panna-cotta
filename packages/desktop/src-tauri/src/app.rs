@@ -115,7 +115,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
 
     app.state::<Mutex<TrayState>>()
-        .lock().unwrap().menu = Some(menu.clone());
+        .lock().unwrap_or_else(|e| e.into_inner()).menu = Some(menu.clone());
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
         .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
@@ -187,10 +187,15 @@ pub fn run() {
                 match crate::server::start(state.clone()).await {
                     Ok(port) => {
                         let tray_state = app_handle.state::<Mutex<TrayState>>();
-                        let menu = tray_state.lock().unwrap().menu.clone();
+                        let menu = tray_state.lock().unwrap_or_else(|e| e.into_inner()).menu.clone();
                         update_tray_status(&app_handle, &menu, Some(port), true);
                     }
-                    Err(e) => eprintln!("Server failed to start: {e}"),
+                    Err(e) => {
+                        eprintln!("Server failed to start: {e}");
+                        let tray_state = app_handle.state::<Mutex<TrayState>>();
+                        let menu = tray_state.lock().unwrap_or_else(|e| e.into_inner()).menu.clone();
+                        update_tray_status(&app_handle, &menu, None, false);
+                    }
                 }
             });
 
