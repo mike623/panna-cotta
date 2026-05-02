@@ -19,7 +19,7 @@ export const configSchema = z.object({
 
 export type StreamDeckConfig = z.infer<typeof configSchema>;
 
-const defaultConfig: StreamDeckConfig = {
+export const defaultConfig: StreamDeckConfig = {
   grid: {
     rows: 2,
     cols: 3,
