@@ -6,14 +6,11 @@ use tauri::{
     AppHandle, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_shell::process::CommandChild;
-use tauri_plugin_shell::ShellExt;
 
 pub struct AppState {
     pub port: Option<u16>,
     pub running: bool,
     pub menu: Option<Menu<Wry>>,
-    pub child: Option<CommandChild>,
 }
 
 impl Default for AppState {
@@ -22,7 +19,6 @@ impl Default for AppState {
             port: None,
             running: false,
             menu: None,
-            child: None,
         }
     }
 }
@@ -40,20 +36,6 @@ fn read_port() -> Option<u16> {
         .and_then(|s| s.trim().parse::<u16>().ok())
 }
 
-pub fn spawn_sidecar(app: &AppHandle, state: &Arc<Mutex<AppState>>) {
-    let shell = app.shell();
-    match shell.sidecar("stream-backend") {
-        Ok(cmd) => match cmd.spawn() {
-            Ok((_rx, child)) => {
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                s.child = Some(child);
-                s.running = true;
-            }
-            Err(e) => eprintln!("Failed to spawn sidecar: {e}"),
-        },
-        Err(e) => eprintln!("Failed to create sidecar command: {e}"),
-    }
-}
 
 fn poll_port_with_retry(app: AppHandle, state: Arc<Mutex<AppState>>) {
     std::thread::spawn(move || {
@@ -247,27 +229,10 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         "open" => toggle_window(app),
         "admin" => open_admin(app),
         "quit" => {
-            let state = app.state::<Arc<Mutex<AppState>>>();
-            if let Some(child) = state.lock().unwrap_or_else(|e| e.into_inner()).child.take() {
-                let _ = child.kill();
-            }
             app.exit(0);
         }
         "start-stop" => {
-            let state = app.state::<Arc<Mutex<AppState>>>();
-            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-            if s.running {
-                if let Some(child) = s.child.take() {
-                    let _ = child.kill();
-                    s.running = false;
-                    let menu = s.menu.clone();
-                    drop(s);
-                    update_tray_status(app, &menu, None, false);
-                }
-            } else {
-                drop(s);
-                spawn_sidecar(app, &app.state::<Arc<Mutex<AppState>>>());
-            }
+            // Start/stop logic will be implemented with native Rust server in subsequent tasks
         }
         "autostart" => {
             use tauri_plugin_autostart::ManagerExt;
@@ -292,13 +257,11 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
-        .plugin(tauri_plugin_shell::init())
         .manage(state)
         .setup(move |app| {
             let state_for_tray = Arc::clone(&state_for_setup);
             let state_for_poll = Arc::clone(&state_for_setup);
 
-            spawn_sidecar(app.handle(), &state_for_setup);
             build_tray(app.handle(), state_for_tray)?;
             poll_port_with_retry(app.handle().clone(), state_for_poll);
 
