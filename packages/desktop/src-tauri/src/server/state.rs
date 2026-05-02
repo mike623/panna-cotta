@@ -154,6 +154,145 @@ pub async fn migrate_old_config(state: &AppState) -> std::io::Result<()> {
     set_active_profile_name(state, "Default").await
 }
 
+pub async fn list_profiles(state: &AppState) -> std::io::Result<Vec<Profile>> {
+    migrate_old_config(state).await?;
+    let active = get_active_profile_name(state).await;
+    let mut profiles = Vec::new();
+
+    match tokio::fs::read_dir(state.profiles_dir()).await {
+        Ok(mut entries) => {
+            while let Some(entry) = entries.next_entry().await? {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(".toml") {
+                    let name = fname[..fname.len() - 5].to_string();
+                    profiles.push(Profile {
+                        is_active: name == active,
+                        name,
+                    });
+                }
+            }
+        }
+        Err(_) => {}
+    }
+
+    if profiles.is_empty() {
+        profiles.push(Profile {
+            name: "Default".to_string(),
+            is_active: true,
+        });
+    }
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(profiles)
+}
+
+pub async fn create_profile(
+    state: &AppState,
+    name: &str,
+    config: Option<&StreamDeckConfig>,
+) -> Result<(), String> {
+    migrate_old_config(state)
+        .await
+        .map_err(|e| e.to_string())?;
+    let path = profile_path(state, name);
+    if path.exists() {
+        return Err(format!(
+            "Profile \"{}\" already exists",
+            safe_profile_name(name)
+        ));
+    }
+    tokio::fs::create_dir_all(state.profiles_dir())
+        .await
+        .map_err(|e| e.to_string())?;
+    let content =
+        toml::to_string(config.unwrap_or(&default_config())).map_err(|e| e.to_string())?;
+    tokio::fs::write(path, content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String> {
+    let path = profile_path(state, name);
+    if !path.exists() {
+        return Err(format!(
+            "Profile \"{}\" not found",
+            safe_profile_name(name)
+        ));
+    }
+    set_active_profile_name(state, name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> {
+    let profiles = list_profiles(state)
+        .await
+        .map_err(|e| e.to_string())?;
+    if profiles.len() <= 1 {
+        return Err("Cannot delete the last profile".to_string());
+    }
+    let safe = safe_profile_name(name);
+    tokio::fs::remove_file(profile_path(state, &safe))
+        .await
+        .map_err(|e| e.to_string())?;
+    let active = get_active_profile_name(state).await;
+    if active == safe {
+        if let Some(p) = profiles.iter().find(|p| p.name != safe) {
+            let _ = set_active_profile_name(state, &p.name).await;
+        }
+    }
+    Ok(())
+}
+
+pub async fn rename_profile(state: &AppState, old: &str, new: &str) -> Result<(), String> {
+    let old_safe = safe_profile_name(old);
+    let new_safe = safe_profile_name(new);
+    if old_safe == new_safe {
+        return Ok(());
+    }
+    let content = tokio::fs::read_to_string(profile_path(state, &old_safe))
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(state.profiles_dir())
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::fs::write(profile_path(state, &new_safe), content)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio::fs::remove_file(profile_path(state, &old_safe))
+        .await
+        .map_err(|e| e.to_string())?;
+    let active = get_active_profile_name(state).await;
+    if active == old_safe {
+        let _ = set_active_profile_name(state, &new_safe).await;
+    }
+    Ok(())
+}
+
+pub async fn use_stream_deck_config(state: &AppState) -> Result<StreamDeckConfig, String> {
+    migrate_old_config(state)
+        .await
+        .map_err(|e| e.to_string())?;
+    let active = get_active_profile_name(state).await;
+    Ok(read_profile(state, &active).await)
+}
+
+pub async fn save_stream_deck_config(
+    state: &AppState,
+    config: &StreamDeckConfig,
+) -> Result<(), String> {
+    migrate_old_config(state)
+        .await
+        .map_err(|e| e.to_string())?;
+    let active = get_active_profile_name(state).await;
+    tokio::fs::create_dir_all(state.profiles_dir())
+        .await
+        .map_err(|e| e.to_string())?;
+    let content = toml::to_string(config).map_err(|e| e.to_string())?;
+    tokio::fs::write(profile_path(state, &active), content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +352,67 @@ mod tests {
         migrate_old_config(&state).await.unwrap();
         migrate_old_config(&state).await.unwrap();
         assert!(state.profiles_dir().join("Default.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn list_profiles_returns_default_when_empty() {
+        let (state, _dir) = temp_state();
+        let profiles = list_profiles(&state).await.unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].name, "Default");
+        assert!(profiles[0].is_active);
+    }
+
+    #[tokio::test]
+    async fn create_and_list_profile() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Work", None).await.unwrap();
+        let profiles = list_profiles(&state).await.unwrap();
+        assert!(profiles.iter().any(|p| p.name == "Work"));
+    }
+
+    #[tokio::test]
+    async fn activate_profile_switches_active() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Work", None).await.unwrap();
+        activate_profile(&state, "Work").await.unwrap();
+        let active = get_active_profile_name(&state).await;
+        assert_eq!(active, "Work");
+    }
+
+    #[tokio::test]
+    async fn delete_profile_removes_file() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Work", None).await.unwrap();
+        delete_profile(&state, "Work").await.unwrap();
+        assert!(!profile_path(&state, "Work").exists());
+    }
+
+    #[tokio::test]
+    async fn delete_last_profile_errors() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let result = delete_profile(&state, "Default").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn rename_profile_renames_file() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Work", None).await.unwrap();
+        rename_profile(&state, "Work", "Personal").await.unwrap();
+        assert!(profile_path(&state, "Personal").exists());
+        assert!(!profile_path(&state, "Work").exists());
+    }
+
+    #[tokio::test]
+    async fn save_and_read_config_roundtrip() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut cfg = default_config();
+        cfg.grid.rows = 4;
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.grid.rows, 4);
     }
 }
