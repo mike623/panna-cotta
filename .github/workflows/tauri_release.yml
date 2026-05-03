@@ -6,75 +6,33 @@ on:
       - "v*"
 
 jobs:
-  build-sidecar:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            task: compile:sidecar:macos-arm
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            task: compile:sidecar:macos-x64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            task: compile:sidecar:windows-x64
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Compile sidecar
-        run: deno task ${{ matrix.task }}
-
-      - name: Upload sidecar artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sidecar-${{ matrix.target }}
-          path: packages/desktop/src-tauri/binaries/
-
   build-tauri:
-    needs: build-sidecar
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            sidecar-artifact: sidecar-aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
-            sidecar-artifact: sidecar-x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            sidecar-artifact: sidecar-x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download sidecar
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.sidecar-artifact }}
-          path: packages/desktop/src-tauri/binaries/
-
-      - name: Make sidecar executable
-        if: runner.os != 'Windows'
-        run: chmod +x packages/desktop/src-tauri/binaries/*
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install Tauri CLI
+      - name: Install frontend dependencies
+        run: npm install
         working-directory: packages/desktop
-        run: npm ci
+
+      - name: Build Svelte admin
+        run: npm run build
+        working-directory: packages/desktop
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
