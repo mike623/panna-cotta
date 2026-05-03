@@ -21,111 +21,114 @@ code in this repository.
 ## Commands
 
 ```bash
-# Run backend (dev)
-deno task start:backend
+# Dev (Vite + Tauri hot-reload)
+cd packages/desktop && npm run tauri dev
 
-# Run backend with auto-reload
-deno task start:backend:watch
+# Production build
+cd packages/desktop && npm run tauri build
 
-# Run tests
-deno task test
+# Rust tests
+cd packages/desktop/src-tauri && cargo test
 
-# Run a single test file
-deno test --config packages/backend/deno.json --allow-read --allow-env --allow-net --allow-run --allow-sys packages/backend/services/config_test.ts
+# Rust lint/check
+cd packages/desktop/src-tauri && cargo check
+cd packages/desktop/src-tauri && cargo clippy
 
-# Lint
-deno task lint
-
-# Format
-deno task fmt
-
-# Compile standalone binary
-deno task compile
-
-# Compile Tauri sidecar binaries
-deno task compile:sidecar:macos-arm    # Apple Silicon
-deno task compile:sidecar:macos-x64   # Intel Mac
-deno task compile:sidecar:windows-x64 # Windows
+# Svelte build only
+cd packages/desktop && npm run build
 ```
 
-ALWAYS run `deno task test` after making backend changes. ALWAYS verify lint
-passes before committing.
+ALWAYS run `cargo test` after making Rust backend changes. ALWAYS run
+`cargo check` before committing.
 
 ## Architecture
 
-Panna Cotta is a web-based Stream Deck: a Deno/Hono backend serves a plain
-HTML/CSS/JS frontend that renders a configurable button grid. Clicking a button
-calls the backend API, which uses macOS system commands (`open`, `osascript`) to
-launch apps or open URLs.
+Panna Cotta is a native Tauri desktop app (macOS-first) that acts as a
+web-based Stream Deck. An embedded Axum HTTP server serves a plain HTML/JS
+frontend to phones/tablets on the LAN. The admin UI is a Svelte SPA loaded in a
+native Tauri webview.
 
 ### Package Structure
 
 ```
 packages/
-  backend/
-    server.ts              # Hono app, API routes, port resolution, landing page HTML
-    services/
-      config.ts            # c12 TOML loader + Zod validation → StreamDeckConfig
-      system.ts            # Deno.Command wrappers for macOS (open, osascript, pmset)
-      version.ts           # GitHub Releases API check with 1-hour cache
   frontend/
-    app.js                 # Stream Deck UI: grid render, swipe pagination, view toggle
+    app.js                 # Stream Deck UI (LAN panel for phones/tablets)
     style.css              # CSS variables for dark/light theme
-    sw.js                  # Service worker: cache-first, skips /api/*
+    sw.js                  # Service worker
     manifest.json          # PWA manifest
   desktop/
+    src/                   # Svelte admin SPA
+      App.svelte           # Root component
+      components/          # GridEditor, ButtonEditor, ProfileSelector, ActionSidebar
+      lib/
+        invoke.ts          # Typed Tauri IPC wrappers
+        types.ts           # Shared TypeScript types
+    public/
+      qr.html              # QR code window (loaded by tray "Show QR" item)
     src-tauri/
-      src/app.rs           # Tauri v2: tray menu, sidecar spawn, port polling, window
-      tauri.conf.json      # Tauri config; sidecar declared as externalBin
-stream-deck.config.toml    # User button config (read from cwd at runtime)
-deno.json                  # Root tasks and import map
+      src/
+        app.rs             # Tauri builder: tray, windows, command registration
+        server/
+          mod.rs           # Axum startup + port resolution (30000-39999)
+          routes.rs        # All HTTP handlers (mirrors Tauri commands for LAN)
+          state.rs         # AppState, profile CRUD, config read/write
+        commands/
+          config.rs        # Tauri commands: get/save config, profile CRUD
+          system.rs        # Tauri commands: execute_command, open_app, open_url
+          version.rs       # Tauri command: get_version_info (1hr cache)
+          server_info.rs   # Tauri command: get_server_info (IP + port)
+      tauri.conf.json      # Tauri config: frontendDist, devUrl, bundle
+      Cargo.toml
 ```
 
 ### Key Design Decisions
 
-**Port persistence**: Backend picks a free port in 30000–39999, writes it to
-`~/.panna-cotta.port`. On restart, it tries the saved port first. The Tauri
-desktop app reads this file to poll server status.
+**Dual access model**: Phones connect via `http://192.168.x.x:PORT/apps/` (Axum
+server). Admin UI opens as a Tauri webview at `tauri://localhost/index.html`
+(served from `frontendDist` in production, from Vite dev server in `tauri dev`).
 
-**Frontend is zero-build**: Plain HTML/CSS/JS — no bundler. Backend embeds and
-serves `packages/frontend/` as static files via `serveDir`. In the compiled
-binary, frontend assets are embedded at compile time with
-`--include packages/frontend`.
+**Shared state**: `Arc<AppState>` is shared between Axum route handlers and
+Tauri commands. Config is always read from disk on demand — no stale in-memory
+copy.
 
-**Sidecar pattern**: The Tauri desktop app compiles the Deno backend to a native
-binary (`stream-backend-<target>`), places it in `src-tauri/binaries/`, and
-spawns it as a Tauri sidecar. Tauri manages the process lifecycle.
+**Port persistence**: Axum picks a free port in 30000–39999, writes it to
+`~/.panna-cotta.port`. On restart, it tries the saved port first.
 
-**Config loading**: `c12` reads `stream-deck.config.toml` from `cwd`. Config is
-validated with Zod on every `/api/config` GET. The admin UI at `/admin` PUTs
-validated JSON back, which the backend serializes to TOML via `@std/toml`.
+**Embedded LAN frontend**: `packages/frontend/` is embedded in the binary at
+compile time via `include_dir!("$CARGO_MANIFEST_DIR/../../frontend")`.
+
+**Profile system**: Configs stored as per-profile TOML files in
+`~/.panna-cotta/profiles/*.toml`. Active profile tracked in
+`~/.panna-cotta/active-profile`.
 
 **Routes**:
 
-- `/` — setup page with QR code (points to `/apps` on local network IP)
-- `/apps/*` — static frontend files
-- `/admin` — inline admin UI for editing config
-- `/api/config` GET/PUT — config CRUD
-- `/api/execute` POST — macOS command dispatcher (open-app, system-volume,
-  brightness)
-- `/api/open-app` POST, `/api/open-url` POST — direct app/URL launchers
-- `/api/version` GET — current + latest version with update check
-- `/api/check-update` GET — proxies GitHub Releases API
+- `GET /` — QR setup page (LAN IP + port)
+- `GET /apps/*` — embedded `packages/frontend/` static files
+- `GET/PUT /api/config` — active profile config CRUD
+- `GET /api/config/default` — default config
+- `GET/POST /api/profiles` — list/create profiles
+- `POST /api/profiles/:name/activate` — switch active profile
+- `PATCH/DELETE /api/profiles/:name` — rename/delete profile
+- `POST /api/execute` — macOS command dispatcher
+- `POST /api/open-app`, `/api/open-url` — launchers
+- `GET /api/version`, `/api/check-update` — version info
+- `GET /api/health`
 
 ### Tauri Desktop App
 
-- Tray icon spawns sidecar on startup, polls `~/.panna-cotta.port` every 500ms
-- Tray menu: Open window, Port/status display, Start/Stop toggle, Launch at
-  Login, Quit
-- Window (`main`) is hidden by default; left-click tray icon or "Open" to show
-- Window close hides rather than destroys (prevents_close + hide)
+- Tray icon starts Axum server on startup, updates port display when ready
+- Tray menu: Open, Admin Config, Show QR Code, Port/status, Launch at Login, version, Quit
+- Admin window uses `WebviewUrl::App("index.html")` — Svelte SPA
+- Main window uses `WebviewUrl::External(http://localhost:PORT/apps/)` — LAN panel
+- Window close hides rather than destroys
 - macOS activation policy: `Accessory` (no Dock icon)
 
 ### Releases
 
-Tagged commits (`v*`) trigger GitHub Actions to build standalone binaries for
-Linux x86_64, macOS Intel, macOS Apple Silicon, and Tauri `.dmg`/`.exe`
-installers.
+Tagged commits (`v*`) trigger GitHub Actions: Vite builds Svelte, Cargo
+compiles Rust (embeds LAN frontend), Tauri bundles `.dmg`/`.exe`.
 
 ## Project Config (RuFlo V3)
 
