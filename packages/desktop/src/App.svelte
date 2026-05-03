@@ -5,12 +5,13 @@
   import GridEditor from './components/GridEditor.svelte'
   import ButtonEditor from './components/ButtonEditor.svelte'
   import ActionSidebar from './components/ActionSidebar.svelte'
-  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder } from './lib/invoke'
-  import type { StreamDeckConfig, Profile } from './lib/types'
+  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder, getServerInfo } from './lib/invoke'
+  import type { StreamDeckConfig, Profile, ServerInfo } from './lib/types'
 
   let config: StreamDeckConfig | null = null
   let profiles: Profile[] = []
   let selectedIndex = -1
+  let serverInfo: ServerInfo | null = null
   let toastMsg = ''
   let toastOk = true
   let toastVisible = false
@@ -24,9 +25,10 @@
   }
 
   async function reload() {
-    const [cfg, profs] = await Promise.all([getConfig(), listProfiles()])
+    const [cfg, profs, info] = await Promise.all([getConfig(), listProfiles(), getServerInfo()])
     config = cfg
     profiles = profs
+    serverInfo = info
     selectedIndex = -1
   }
 
@@ -72,6 +74,17 @@
       on:use={e => editorRef?.prefill(e.detail)}
     />
   </div>
+  {#if serverInfo}
+    {@const lanUrl = `http://${serverInfo.ip}:${serverInfo.port}/apps/`}
+    <div class="qr-panel">
+      <img
+        class="qr-img"
+        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lanUrl)}`}
+        alt="QR code"
+      />
+      <span class="qr-url">{lanUrl}</span>
+    </div>
+  {/if}
 {/if}
 
 {#if toastVisible}
@@ -92,4 +105,7 @@
   .toast-bar { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); background: #2a2a2c; border: 1px solid #3a3a3c; padding: 0.45rem 1.1rem; border-radius: 2rem; font-size: 0.82rem; white-space: nowrap; }
   .toast-bar.ok { border-color: #4ade80; color: #4ade80; }
   .toast-bar.err { border-color: #f87171; color: #f87171; }
+  .qr-panel { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.875rem; border-top: 1px solid #3a3a3c; }
+  .qr-img { width: 180px; height: 180px; border-radius: 0.35rem; }
+  .qr-url { font-size: 0.75rem; color: #888; word-break: break-all; text-align: center; }
 </style>

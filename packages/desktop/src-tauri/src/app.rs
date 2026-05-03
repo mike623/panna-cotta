@@ -73,31 +73,11 @@ fn open_admin(app: &AppHandle) {
     }
 }
 
-fn open_qr_window(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("qr") {
-        let _ = w.show();
-        let _ = w.set_focus();
-    } else {
-        let _ = WebviewWindowBuilder::new(
-            app,
-            "qr",
-            WebviewUrl::App(std::path::PathBuf::from("qr.html")),
-        )
-        .title("Panna Cotta — QR Code")
-        .inner_size(320.0, 420.0)
-        .resizable(false)
-        .decorations(true)
-        .build();
-    }
-}
-
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     use tauri_plugin_autostart::ManagerExt;
     let is_autostart = app.autolaunch().is_enabled().unwrap_or(false);
 
-    let open = MenuItemBuilder::new("Open").id("open").build(app)?;
     let admin = MenuItemBuilder::new("Admin Config…").id("admin").build(app)?;
-    let qr = MenuItemBuilder::new("Show QR Code").id("qr").build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let port_item = MenuItemBuilder::new("Port: --").id("port").enabled(false).build(app)?;
     let status_item = MenuItemBuilder::new("○ Starting…").id("status").enabled(false).build(app)?;
@@ -109,7 +89,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
     let menu = MenuBuilder::new(app)
-        .item(&open).item(&admin).item(&qr).item(&sep1)
+        .item(&admin).item(&sep1)
         .item(&port_item).item(&status_item).item(&sep2)
         .item(&autostart).item(&sep3).item(&version_item).item(&quit)
         .build()?;
@@ -137,9 +117,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
-        "open" => toggle_window(app),
         "admin" => open_admin(app),
-        "qr" => open_qr_window(app),
         "autostart" => {
             use tauri_plugin_autostart::ManagerExt;
             let al = app.autolaunch();
