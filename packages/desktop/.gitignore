@@ -1,3 +1,5 @@
 target/
 node_modules/
 src-tauri/binaries/
+src-tauri/frontend/
+src-tauri/stream-deck.config.toml
