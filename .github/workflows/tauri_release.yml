@@ -6,7 +6,9 @@ on:
       - "v*"
 
 jobs:
-  build-tauri:
+  publish-tauri:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -30,57 +32,19 @@ jobs:
         run: npm install
         working-directory: packages/desktop
 
-      - name: Build Svelte admin
-        run: npm run build
-        working-directory: packages/desktop
-
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Build Tauri app
-        working-directory: packages/desktop
-        run: npx tauri build --target ${{ matrix.target }}
-
-      - name: Upload macOS artifacts
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tauri-${{ matrix.target }}
-          path: |
-            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-
-      - name: Upload Windows artifacts
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: tauri-${{ matrix.target }}
-          path: |
-            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-
-  release:
-    needs: build-tauri
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download all Tauri artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tauri-*
-          path: artifacts/
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          prerelease: false
-          files: |
-            artifacts/**/*.dmg
-            artifacts/**/*.app.tar.gz
-            artifacts/**/*.exe
-            artifacts/**/*.msi
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Panna Cotta ${{ github.ref_name }}"
+          releaseBody: ""
+          releaseDraft: false
+          prerelease: false
+          projectPath: packages/desktop
+          args: --target ${{ matrix.target }}
