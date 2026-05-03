@@ -31,26 +31,10 @@ pub struct Profile {
     pub is_active: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VersionInfo {
-    pub current: String,
-    pub latest: Option<String>,
-    #[serde(rename = "updateAvailable")]
-    pub update_available: bool,
-    #[serde(rename = "releaseUrl")]
-    pub release_url: Option<String>,
-}
 
-#[derive(Debug, Clone)]
-pub struct VersionCache {
-    pub latest: String,
-    pub release_url: String,
-    pub fetched_at: std::time::Instant,
-}
 
 pub struct AppState {
     pub config_dir: PathBuf,
-    pub version_cache: Mutex<Option<VersionCache>>,
     pub port: Mutex<Option<u16>>,
 }
 
@@ -61,7 +45,6 @@ impl AppState {
             .unwrap_or_else(|_| ".".to_string());
         Self {
             config_dir: PathBuf::from(home).join(".panna-cotta"),
-            version_cache: Mutex::new(None),
             port: Mutex::new(None),
         }
     }
@@ -302,7 +285,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
-            version_cache: Mutex::new(None),
             port: Mutex::new(None),
         };
         (state, dir)

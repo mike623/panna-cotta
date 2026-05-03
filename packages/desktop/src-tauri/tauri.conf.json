@@ -1,6 +1,6 @@
 {
   "productName": "Panna Cotta",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "identifier": "io.mwong.panna-cotta",
   "build": {
     "beforeDevCommand": "npm run dev",

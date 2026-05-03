@@ -2,6 +2,14 @@
 
 All notable changes to Panna Cotta are documented here.
 
+## [0.1.10] - 2026-05-03
+
+### Removed
+- Update available banner on phone/tablet panel — desktop app handles updates natively
+- `/api/version` HTTP endpoint (no longer needed)
+- Dead code: `VersionInfo`, `VersionCache` structs, `version_cache` state, `commands/version.rs`
+- `reqwest` and `semver` dependencies from Cargo.toml
+
 ## [0.1.9] - 2026-05-03
 
 ### Fixed

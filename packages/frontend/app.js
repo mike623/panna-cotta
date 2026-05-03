@@ -38,13 +38,6 @@ class StreamDeckAPI {
     return response.ok;
   }
 
-  async getVersion() {
-    const response = await fetch(`${this.baseUrl}/api/version`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error(`Version fetch failed: ${response.status}`);
-    return response.json();
-  }
 }
 
 const api = new StreamDeckAPI();
@@ -74,61 +67,6 @@ function setConnectionState(online) {
     banner.classList.remove("hidden");
   } else {
     banner.classList.add("hidden");
-  }
-}
-
-function showUpdateBanner(info) {
-  if (document.getElementById("update-banner")) return;
-  const banner = document.createElement("div");
-  banner.id = "update-banner";
-  banner.className = "update-banner";
-
-  const icon = document.createElement("i");
-  icon.setAttribute("data-lucide", "download");
-  banner.appendChild(icon);
-
-  const text = document.createElement("span");
-  text.textContent = `Update available: v${info.latest} (you have v${info.current})`;
-  banner.appendChild(text);
-
-  if (info.releaseUrl) {
-    const link = document.createElement("a");
-    link.href = info.releaseUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = "Download";
-    banner.appendChild(link);
-  }
-
-  const close = document.createElement("button");
-  close.className = "update-banner-close";
-  close.setAttribute("aria-label", "Dismiss");
-  close.textContent = "\u00d7";
-  close.addEventListener("click", () => {
-    banner.remove();
-    try {
-      localStorage.setItem("dismissed-version", info.latest);
-    } catch {
-      // ignore
-    }
-  });
-  banner.appendChild(close);
-
-  document.body.prepend(banner);
-  lucide.createIcons();
-}
-
-async function checkForUpdate() {
-  try {
-    const info = await api.getVersion();
-    const badge = document.getElementById("version-badge");
-    if (badge) badge.textContent = `v${info.current}`;
-    if (!info.updateAvailable || !info.latest) return;
-    const dismissed = localStorage.getItem("dismissed-version");
-    if (dismissed === info.latest) return;
-    showUpdateBanner(info);
-  } catch {
-    // ignore — version check is best-effort
   }
 }
 
@@ -395,7 +333,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   renderView();
   startHealthPing();
-  checkForUpdate();
 
   if (typeof window.__TAURI__ !== "undefined") {
     const closeBtn = document.getElementById("tauri-close");

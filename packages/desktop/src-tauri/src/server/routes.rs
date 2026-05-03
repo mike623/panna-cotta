@@ -16,7 +16,6 @@ use crate::server::state::{
     list_profiles, rename_profile, save_stream_deck_config,
     use_stream_deck_config, AppState, StreamDeckConfig,
 };
-use crate::commands::version::get_version_info_inner;
 
 static APPS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../frontend");
 
@@ -36,7 +35,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/open-app", post(open_app_handler))
         .route("/api/open-url", post(open_url_handler))
         .route("/api/open-config-folder", post(open_config_folder_handler))
-        .route("/api/version", get(version_handler))
         .with_state(state)
 }
 
@@ -243,11 +241,3 @@ async fn open_config_folder_handler(State(state): State<Arc<AppState>>) -> impl 
     Json(json!({"ok": true}))
 }
 
-// ── Version handlers ──────────────────────────────────────────────────
-
-async fn version_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match get_version_info_inner(&state).await {
-        Ok(v) => Json(json!(v)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
-    }
-}
