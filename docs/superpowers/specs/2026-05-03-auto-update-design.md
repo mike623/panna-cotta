@@ -52,6 +52,10 @@ Tauri generates `latest.json` automatically when `bundle.createUpdaterArtifacts:
 | `Cargo.toml` | Add `tauri-plugin-updater`, `tauri-plugin-dialog`, `tauri-plugin-process` |
 | `app.rs` | Register plugins, spawn background update loop, add macOS app menu |
 | `commands/updater.rs` | New — `check_for_updates` Tauri command + shared update logic |
+| `commands/version.rs` | Remove `get_version_info` Tauri command; keep `get_version_info_inner` for HTTP route |
+| `server/routes.rs` | Remove `/api/check-update` route (unused); keep `/api/version` (LAN frontend uses it) |
+| `src/lib/invoke.ts` | Remove `getVersionInfo` (was unused in any Svelte component) |
+| `src/lib/types.ts` | Remove `VersionInfo` type if no longer referenced |
 
 ### Config
 
@@ -84,6 +88,6 @@ Tauri generates `latest.json` automatically when `bundle.createUpdaterArtifacts:
 
 ## Out of Scope
 
-- Existing `version.rs` / `/api/check-update` HTTP API — unchanged (used by LAN clients)
+- `/api/version` HTTP route — unchanged (LAN phone/tablet frontend uses it for version badge)
 - Windows auto-update — CI builds `.exe` with `.sig`, plugin handles it, but not explicitly tested
 - Delta updates — full installer only
