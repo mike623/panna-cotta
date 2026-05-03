@@ -1,4 +1,5 @@
 use std::process::Command;
+use tauri::AppHandle;
 
 #[tauri::command]
 pub async fn execute_command(action: String, target: String) -> Result<(), String> {
@@ -56,4 +57,22 @@ pub async fn open_url(url: String) -> Result<(), String> {
         .output()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+pub async fn get_autostart(app: AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if enabled { al.enable() } else { al.disable() }.map_err(|e| e.to_string())
 }
