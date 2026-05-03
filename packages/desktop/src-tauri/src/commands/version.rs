@@ -1,6 +1,4 @@
-use std::sync::Arc;
 use std::time::Duration;
-use tauri::State;
 
 use crate::server::state::{AppState, VersionCache, VersionInfo};
 
@@ -74,11 +72,4 @@ pub async fn get_version_info_inner(state: &AppState) -> Result<VersionInfo, Str
         update_available,
         release_url,
     })
-}
-
-#[tauri::command]
-pub async fn get_version_info(
-    state: State<'_, Arc<AppState>>,
-) -> Result<VersionInfo, String> {
-    get_version_info_inner(&state).await
 }

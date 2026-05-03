@@ -8,7 +8,7 @@ use axum::{
 };
 use include_dir::{include_dir, Dir};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 
 use crate::server::state::{
@@ -37,7 +37,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/open-url", post(open_url_handler))
         .route("/api/open-config-folder", post(open_config_folder_handler))
         .route("/api/version", get(version_handler))
-        .route("/api/check-update", get(check_update_handler))
         .with_state(state)
 }
 
@@ -250,30 +249,5 @@ async fn version_handler(State(state): State<Arc<AppState>>) -> impl IntoRespons
     match get_version_info_inner(&state).await {
         Ok(v) => Json(json!(v)).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
-    }
-}
-
-async fn check_update_handler() -> impl IntoResponse {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
-    };
-    let url = "https://api.github.com/repos/mike623/panna-cotta/releases/latest";
-    match client.get(url).header("User-Agent", "panna-cotta").send().await {
-        Ok(r) if r.status().is_success() => {
-            match r.json::<Value>().await {
-                Ok(data) => Json(json!({
-                    "version": data["tag_name"],
-                    "name": data["name"],
-                    "url": data["html_url"],
-                    "assets": data["assets"].as_array().unwrap_or(&vec![]).iter().map(|a| json!({"name": a["name"], "url": a["browser_download_url"]})).collect::<Vec<_>>()
-                })).into_response(),
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
-            }
-        }
-        _ => (StatusCode::BAD_GATEWAY, Json(json!({"error": "GitHub API error"}))).into_response(),
     }
 }

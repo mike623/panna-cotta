@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { StreamDeckConfig, Profile, VersionInfo, ServerInfo } from './types'
+import type { StreamDeckConfig, Profile, ServerInfo } from './types'
 
 export const getConfig = () =>
   invoke<StreamDeckConfig>('get_config')
@@ -27,9 +27,6 @@ export const deleteProfile = (name: string) =>
 
 export const openConfigFolder = () =>
   invoke<void>('open_config_folder')
-
-export const getVersionInfo = () =>
-  invoke<VersionInfo>('get_version_info')
 
 export const executeCommand = (action: string, target: string) =>
   invoke<void>('execute_command', { action, target })

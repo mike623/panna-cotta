@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry,
 };
@@ -128,12 +128,25 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     }
 }
 
+fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>> {
+    let check_updates = MenuItemBuilder::new("Check for Updates\u{2026}")
+        .id("check-for-updates")
+        .build(app)?;
+    let app_submenu = SubmenuBuilder::new(app, "Panna Cotta")
+        .item(&check_updates)
+        .build()?;
+    MenuBuilder::new(app).item(&app_submenu).build()
+}
+
 pub fn run() {
     let app_state = Arc::new(AppState::new());
     let tray_state = Mutex::new(TrayState { menu: None });
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .manage(app_state.clone())
         .manage(tray_state)
         .invoke_handler(tauri::generate_handler![
@@ -149,11 +162,34 @@ pub fn run() {
             crate::commands::system::execute_command,
             crate::commands::system::open_app,
             crate::commands::system::open_url,
-            crate::commands::version::get_version_info,
+            crate::commands::updater::check_for_updates,
             crate::commands::server_info::get_server_info,
         ])
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "check-for-updates" {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::commands::updater::run_update_check(app, true).await;
+                });
+            }
+        })
         .setup(move |app| {
             build_tray(app.handle())?;
+
+            let app_menu = build_app_menu(app.handle())?;
+            app.set_menu(app_menu)?;
+
+            let update_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                crate::commands::updater::run_update_check(update_handle.clone(), false).await;
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+                interval.tick().await;
+                loop {
+                    interval.tick().await;
+                    crate::commands::updater::run_update_check(update_handle.clone(), false).await;
+                }
+            });
 
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
