@@ -74,16 +74,16 @@
     </span>
   </div>
   <div class="editor-fields">
-    <div class="field"><label>Name</label><input bind:value={name} placeholder="GitHub" /></div>
+    <div class="field"><label for="btn-name">Name</label><input id="btn-name" bind:value={name} placeholder="GitHub" /></div>
     <div class="field">
-      <label>Type</label>
-      <select bind:value={type}>
+      <label for="btn-type">Type</label>
+      <select id="btn-type" bind:value={type}>
         <option value="browser">browser</option>
         <option value="system">system</option>
       </select>
     </div>
-    <div class="field"><label>Icon (Lucide name)</label><input bind:value={icon} placeholder="github" /></div>
-    <div class="field full"><label>Action (URL or app name)</label><input bind:value={action} placeholder="https://github.com" /></div>
+    <div class="field"><label for="btn-icon">Icon (Lucide name)</label><input id="btn-icon" bind:value={icon} placeholder="github" /></div>
+    <div class="field full"><label for="btn-action">Action (URL or app name)</label><input id="btn-action" bind:value={action} placeholder="https://github.com" /></div>
   </div>
   <div class="editor-actions">
     <button class="btn" on:click={handleSave}>{isEditing ? 'Update' : 'Add'}</button>
