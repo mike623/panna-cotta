@@ -1,0 +1,55 @@
+# Changelog
+
+All notable changes to Panna Cotta are documented here.
+
+## [0.1.8] - 2026-05-03
+
+### Added
+- Admin panel redesigned with glassmorphic React UI: drag-and-drop slot management, multi-profile support, multi-page layouts, undo/redo (50 snapshots), debounced autosave
+- Command palette (⌘K) with search across actions and commands
+- Settings popover in toolbar: server port/status indicator, Launch at Login toggle, Quit button
+- 54 stroke-based SVG icons including power and settings icons
+- Dark/light theme toggle with oklch color system and glassy aesthetics
+- Keyboard shortcuts overlay (?) and slot selection by number key
+
+### Changed
+- Tray icon click now opens admin panel directly — no more context menu
+- All admin settings (autostart, quit) moved into the admin panel settings popover
+- Admin window is now fixed size (non-resizable), fits content without scrolling
+
+### Fixed
+- Quit button now correctly terminates the app (added `process:allow-exit` capability)
+- Admin window no longer scrollable — layout fills the fixed window
+
+## [0.1.7] - 2026-05-03
+
+### Added
+- Native auto-update with background download and restart dialog
+- Signed multi-platform release builds via GitHub Actions
+
+## [0.1.6] - 2026-04-28
+
+### Fixed
+- Configuration file path now correctly uses user home directory
+- Deno lint errors in version sync script resolved
+
+## [0.1.5] - 2026-04-28
+
+### Fixed
+- Lint and format issues resolved across codebase
+
+## [0.1.4] - 2026-04-28
+
+### Fixed
+- Configuration path fix: profiles now stored in correct user home directory
+
+## [0.1.3] - 2026-04-28
+
+### Added
+- Version display in Tauri tray menu
+
+## [0.1.2] - 2026-04-28
+
+### Fixed
+- App quit behavior from tray menu
+- Version badge display
