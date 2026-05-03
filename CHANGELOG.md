@@ -2,6 +2,11 @@
 
 All notable changes to Panna Cotta are documented here.
 
+## [0.1.9] - 2026-05-03
+
+### Fixed
+- QR code in Connect popover now generates a real, scannable code (was a fake procedural pattern)
+
 ## [0.1.8] - 2026-05-03
 
 ### Added
