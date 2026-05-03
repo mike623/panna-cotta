@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { Icon } from './icons'
 import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
 import type { SlotData } from './data'
@@ -590,21 +591,6 @@ interface ConnectPopoverProps {
 export function ConnectPopover({ open, onClose, theme, lanUrl }: ConnectPopoverProps) {
   if (!open) return null
 
-  const qrCells: number[] = []
-  const seed = lanUrl || 'panna-cotta-2026'
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  for (let i = 0; i < 21 * 21; i++) { h = (h * 1103515245 + 12345) >>> 0; qrCells.push(h & 1) }
-  const setCell = (r: number, c: number, v: number) => { qrCells[r * 21 + c] = v }
-  const drawFinder = (r0: number, c0: number) => {
-    for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
-      const edge = r === 0 || r === 6 || c === 0 || c === 6
-      const inner = r >= 2 && r <= 4 && c >= 2 && c <= 4
-      setCell(r0 + r, c0 + c, edge || inner ? 1 : 0)
-    }
-  }
-  drawFinder(0, 0); drawFinder(0, 14); drawFinder(14, 0)
-
   return (
     <div onMouseDown={onClose} style={{
       position: 'absolute', inset: 0, zIndex: 40,
@@ -623,12 +609,26 @@ export function ConnectPopover({ open, onClose, theme, lanUrl }: ConnectPopoverP
         <div style={{ fontSize: 11.5, color: theme.textMute, marginBottom: 16 }}>
           Open on your phone or tablet and scan to pair.
         </div>
-        <div style={{
-          display: 'inline-grid', gridTemplateColumns: 'repeat(21, 1fr)',
-          padding: 10, background: 'white', borderRadius: 10,
-          width: 200, height: 200, gap: 0,
-        }}>
-          {qrCells.map((v, i) => <div key={i} style={{ background: v ? 'black' : 'white' }} />)}
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          {lanUrl ? (
+            <QRCodeSVG
+              value={lanUrl}
+              size={200}
+              bgColor="white"
+              fgColor="black"
+              level="M"
+              style={{ borderRadius: 10 }}
+            />
+          ) : (
+            <div style={{
+              width: 200, height: 200, borderRadius: 10,
+              background: theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, color: theme.textFaint,
+            }}>
+              Waiting for server…
+            </div>
+          )}
         </div>
         {lanUrl && (
           <div style={{ marginTop: 14, fontSize: 11, color: theme.textMute, fontFamily: 'ui-monospace, monospace' }}>
