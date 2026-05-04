@@ -1,11 +1,85 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { useDraggable } from '@dnd-kit/core'
 import { Icon } from './icons'
 import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
 import type { SlotData } from './data'
+import type { QuickTemplate, ActionDef, ActionCategory } from './data'
 import type { Theme } from './theme'
 
 // ── Action Palette ──────────────────────────────────────────────────────────
+function DraggableTemplate({ t, theme, onTemplate }: {
+  t: QuickTemplate
+  theme: Theme
+  onTemplate: (t: QuickTemplate) => void
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `template-${t.id}`,
+    data: { type: 'action', actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon },
+  })
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={() => onTemplate(t)}
+      style={{
+        all: 'unset', cursor: isDragging ? 'grabbing' : 'grab',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 4, padding: '8px 4px',
+        background: theme.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
+        border: `0.5px solid ${theme.border}`,
+        borderRadius: 8, fontSize: 10.5, color: theme.text, textAlign: 'center',
+        opacity: isDragging ? 0.4 : 1,
+        touchAction: 'none',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)' }}
+    >
+      <Icon name={t.icon} size={16} color={theme.textMute} strokeWidth={1.7} />
+      {t.name}
+    </button>
+  )
+}
+
+function DraggableAction({ a, cat, theme }: {
+  a: ActionDef
+  cat: ActionCategory
+  theme: Theme
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `action-${a.id}`,
+    data: { type: 'action', actionId: a.id, name: a.name, value: a.hint || '' },
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 9,
+        padding: '6px 7px', borderRadius: 7,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        color: theme.text, fontSize: 12, transition: 'background .12s',
+        opacity: isDragging ? 0.4 : 1,
+        touchAction: 'none',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+    >
+      <div style={{
+        width: 22, height: 22, borderRadius: 6,
+        background: `color-mix(in oklch, ${cat.color} 18%, transparent)`,
+        color: cat.color,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Icon name={a.icon} size={13} strokeWidth={1.8} />
+      </div>
+      <span style={{ flex: 1 }}>{a.name}</span>
+    </div>
+  )
+}
+
 interface ActionPaletteProps {
   theme: Theme
   onTemplate: (t: { actionId: string; name: string; value: string; icon: string }) => void
@@ -61,28 +135,7 @@ export function ActionPalette({ theme, onTemplate }: ActionPaletteProps) {
         }}>Quick add</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
           {QUICK_TEMPLATES.map(t => (
-            <button key={t.id}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = 'copy'
-                e.dataTransfer.setData('application/x-panna', JSON.stringify({
-                  type: 'action', actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon,
-                }))
-              }}
-              onClick={() => onTemplate(t)}
-              style={{
-                all: 'unset', cursor: 'grab',
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                gap: 4, padding: '8px 4px',
-                background: theme.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
-                border: `0.5px solid ${theme.border}`,
-                borderRadius: 8, fontSize: 10.5, color: theme.text, textAlign: 'center',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)' }}>
-              <Icon name={t.icon} size={16} color={theme.textMute} strokeWidth={1.7} />
-              {t.name}
-            </button>
+            <DraggableTemplate key={t.id} t={t} theme={theme} onTemplate={onTemplate} />
           ))}
         </div>
       </div>
@@ -105,31 +158,7 @@ export function ActionPalette({ theme, onTemplate }: ActionPaletteProps) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {cat.actions.map(a => (
-                <div key={a.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'copy'
-                    e.dataTransfer.setData('application/x-panna', JSON.stringify({
-                      type: 'action', actionId: a.id, name: a.name, value: a.hint || '',
-                    }))
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 9,
-                    padding: '6px 7px', borderRadius: 7, cursor: 'grab',
-                    color: theme.text, fontSize: 12, transition: 'background .12s',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}>
-                  <div style={{
-                    width: 22, height: 22, borderRadius: 6,
-                    background: `color-mix(in oklch, ${cat.color} 18%, transparent)`,
-                    color: cat.color,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Icon name={a.icon} size={13} strokeWidth={1.8} />
-                  </div>
-                  <span style={{ flex: 1 }}>{a.name}</span>
-                </div>
+                <DraggableAction key={a.id} a={a} cat={cat} theme={theme} />
               ))}
             </div>
           </div>
