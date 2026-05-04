@@ -1,4 +1,5 @@
-import React, { useState, useRef, useLayoutEffect } from 'react'
+import React, { useRef, useLayoutEffect } from 'react'
+import { useDroppable, useDraggable } from '@dnd-kit/core'
 import { Icon } from './icons'
 import { findAction } from './data'
 import type { SlotData, PageData, ProfileData } from './data'
@@ -129,29 +130,97 @@ export function Tile({ slot, theme, selected, dimmed, onClick, onMouseDown, drag
   )
 }
 
+// ── Slot Cell ───────────────────────────────────────────────────────────────
+interface SlotCellProps {
+  idx: number
+  slot: SlotData | undefined
+  theme: Theme
+  selected: boolean
+  activeDragId: string | null
+  onSlotClick: (idx: number) => void
+  onFlipRef: (el: HTMLElement | null) => void
+}
+
+function SlotCell({ idx, slot, theme, selected, activeDragId, onSlotClick, onFlipRef }: SlotCellProps) {
+  const { setNodeRef: dropRef, isOver } = useDroppable({ id: `slot-${idx}` })
+  const { attributes, listeners, setNodeRef: dragRef, isDragging } = useDraggable({
+    id: `tile-${idx}`,
+    data: { type: 'tile', from: idx },
+    disabled: !slot,
+  })
+
+  const activeDragFrom = activeDragId?.startsWith('tile-')
+    ? parseInt(activeDragId.replace('tile-', ''), 10)
+    : null
+  const isSwap = isOver && activeDragFrom !== null && activeDragFrom !== idx && !!slot
+
+  return (
+    <div ref={dropRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {isOver && (
+        <div style={{
+          position: 'absolute', inset: -3,
+          border: `2px solid ${theme.accent}`,
+          borderRadius: theme.radius + 2,
+          pointerEvents: 'none', zIndex: 2,
+          boxShadow: `0 0 16px color-mix(in oklch, ${theme.accent} 40%, transparent)`,
+        }} />
+      )}
+      {isSwap && (
+        <div style={{
+          position: 'absolute', top: -8, right: -8, zIndex: 3,
+          width: 22, height: 22, borderRadius: 11,
+          background: theme.accent,
+          color: theme.dark ? 'oklch(0.18 0.01 250)' : 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
+          pointerEvents: 'none',
+        }}>
+          <Icon name="swap" size={12} strokeWidth={2.2} color="currentColor" />
+        </div>
+      )}
+      <div
+        ref={(el) => { onFlipRef(el); if (slot) dragRef(el as HTMLElement) }}
+        {...(slot ? { ...attributes, ...listeners } : {})}
+        style={{
+          width: '100%', height: '100%',
+          opacity: isDragging ? 0.35 : 1,
+          filter: isDragging ? 'saturate(0.6)' : 'none',
+          transition: 'opacity .15s ease, filter .15s ease',
+          willChange: 'transform',
+          cursor: slot ? 'grab' : 'default',
+          touchAction: 'none',
+        }}
+      >
+        <Tile
+          slot={slot}
+          theme={theme}
+          selected={selected}
+          onClick={() => onSlotClick(idx)}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ── Device Canvas ───────────────────────────────────────────────────────────
 interface DeviceCanvasProps {
   profile: ProfileData
   page: PageData
   selectedSlot: number | null
   theme: Theme
+  activeDragId: string | null
   onSlotClick: (idx: number) => void
-  onDropAction: (idx: number, payload: { actionId: string; name: string; value: string; iconOverride?: string }) => void
-  onReorder: (from: number, to: number) => void
 }
 
-export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, onDropAction, onReorder }: DeviceCanvasProps) {
+export function DeviceCanvas({ profile, page, selectedSlot, theme, activeDragId, onSlotClick }: DeviceCanvasProps) {
   const { rows, cols } = profile
   const total = rows * cols
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-  const [dragFrom, setDragFrom] = useState<number | null>(null)
-  const [dragKind, setDragKind] = useState<'tile' | 'action' | null>(null)
 
-  const tileRefs   = useRef(new Map<string, HTMLElement>())
-  const prevRects  = useRef(new Map<string, DOMRect>())
+  const tileRefs  = useRef(new Map<string, HTMLElement>())
+  const prevRects = useRef(new Map<string, DOMRect>())
 
-  const slotKey = (s: SlotData | undefined) => s ? `${s.actionId}|${s.label}|${s.value}|${s.iconOverride || ''}` : null
+  const slotKey = (s: SlotData | undefined) =>
+    s ? `${s.actionId}|${s.label}|${s.value}|${s.iconOverride || ''}` : null
 
   useLayoutEffect(() => {
     const newRects = new Map<string, DOMRect>()
@@ -174,21 +243,6 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
     prevRects.current = newRects
   })
 
-  const handleDragOver = (e: React.DragEvent, idx: number) => {
-    e.preventDefault()
-    setHoverIdx(idx)
-    setDragOver(true)
-  }
-  const handleDrop = (e: React.DragEvent, idx: number) => {
-    e.preventDefault()
-    setHoverIdx(null); setDragOver(false); setDragFrom(null); setDragKind(null)
-    const data = e.dataTransfer.getData('application/x-panna')
-    if (!data) return
-    const payload = JSON.parse(data)
-    if (payload.type === 'action')    onDropAction(idx, payload)
-    if (payload.type === 'tile-move') onReorder(payload.from, idx)
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
       <div style={{
@@ -200,88 +254,23 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
       }}>
         {Array.from({ length: total }).map((_, idx) => {
           const slot = page.slots[idx]
-          const isSource = dragFrom === idx
-          const isHover  = hoverIdx === idx && dragOver
-          const isSwap   = isHover && dragKind === 'tile' && dragFrom !== null && dragFrom !== idx && !!slot
           return (
-            <div key={idx}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragLeave={() => { setHoverIdx(null); setDragOver(false) }}
-              onDrop={(e) => handleDrop(e, idx)}
-              style={{ position: 'relative', width: '100%', height: '100%' }}>
-              {isHover && (
-                <div style={{
-                  position: 'absolute', inset: -3,
-                  border: `2px solid ${theme.accent}`,
-                  borderRadius: theme.radius + 2,
-                  pointerEvents: 'none', zIndex: 2,
-                  boxShadow: `0 0 16px color-mix(in oklch, ${theme.accent} 40%, transparent)`,
-                }} />
-              )}
-              {isSwap && (
-                <div style={{
-                  position: 'absolute', top: -8, right: -8, zIndex: 3,
-                  width: 22, height: 22, borderRadius: 11,
-                  background: theme.accent,
-                  color: theme.dark ? 'oklch(0.18 0.01 250)' : 'white',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
-                  pointerEvents: 'none',
-                }}>
-                  <Icon name="swap" size={12} strokeWidth={2.2} color="currentColor" />
-                </div>
-              )}
-              <div
-                ref={(el) => {
-                  const key = slotKey(slot)
-                  if (key) {
-                    if (el) tileRefs.current.set(key, el)
-                    else    tileRefs.current.delete(key)
-                  }
-                }}
-                style={{
-                  width: '100%', height: '100%',
-                  opacity: isSource ? 0.35 : 1,
-                  filter: isSource ? 'saturate(0.6)' : 'none',
-                  transition: 'opacity .15s ease, filter .15s ease',
-                  willChange: 'transform',
-                }}>
-                <Tile
-                  slot={slot}
-                  theme={theme}
-                  selected={selectedSlot === idx}
-                  onClick={() => onSlotClick(idx)}
-                />
-              </div>
-              {slot && (
-                <div
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move'
-                    e.dataTransfer.setData('application/x-panna', JSON.stringify({ type: 'tile-move', from: idx }))
-                    setDragFrom(idx)
-                    setDragKind('tile')
-                    const ghost = document.createElement('div')
-                    ghost.style.cssText = `width:80px;height:80px;background:${theme.tile};border-radius:14px;display:flex;align-items:center;justify-content:center;border:1px solid ${theme.borderStrong}`
-                    ghost.textContent = slot.label
-                    ghost.style.color = theme.text
-                    ghost.style.font = `600 11px ${theme.font}`
-                    document.body.appendChild(ghost)
-                    e.dataTransfer.setDragImage(ghost, 40, 40)
-                    setTimeout(() => ghost.remove(), 0)
-                  }}
-                  onDragEnd={() => {
-                    setDragFrom(null); setDragKind(null); setHoverIdx(null); setDragOver(false)
-                  }}
-                  style={{
-                    position: 'absolute', inset: 0,
-                    cursor: dragFrom === idx ? 'grabbing' : 'grab',
-                    pointerEvents: hoverIdx === idx ? 'none' : 'auto',
-                  }}
-                  onClick={() => onSlotClick(idx)}
-                />
-              )}
-            </div>
+            <SlotCell
+              key={idx}
+              idx={idx}
+              slot={slot}
+              theme={theme}
+              selected={selectedSlot === idx}
+              activeDragId={activeDragId}
+              onSlotClick={onSlotClick}
+              onFlipRef={(el) => {
+                const key = slotKey(slot)
+                if (key) {
+                  if (el) tileRefs.current.set(key, el)
+                  else    tileRefs.current.delete(key)
+                }
+              }}
+            />
           )
         })}
       </div>
@@ -295,7 +284,10 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
           fontWeight: 600, fontSize: 10.5, letterSpacing: '0.01em',
         }}>
           <span style={{ position: 'relative', width: 6, height: 6 }}>
-            <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'oklch(0.72 0.18 145)', boxShadow: '0 0 6px oklch(0.72 0.18 145)' }} />
+            <span style={{
+              position: 'absolute', inset: 0, borderRadius: '50%',
+              background: 'oklch(0.72 0.18 145)', boxShadow: '0 0 6px oklch(0.72 0.18 145)',
+            }} />
           </span>
           Live preview
         </span>
