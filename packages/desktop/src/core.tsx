@@ -179,7 +179,7 @@ function SlotCell({ idx, slot, theme, selected, activeDragId, onSlotClick, onFli
         </div>
       )}
       <div
-        ref={(el) => { onFlipRef(el); if (slot) dragRef(el as HTMLElement) }}
+        ref={(el) => { onFlipRef(el); dragRef(el) }}
         {...(slot ? { ...attributes, ...listeners } : {})}
         style={{
           width: '100%', height: '100%',
@@ -256,7 +256,7 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, activeDragId,
           const slot = page.slots[idx]
           return (
             <SlotCell
-              key={idx}
+              key={idx} /* index key intentional: stable identity required for FLIP animation */
               idx={idx}
               slot={slot}
               theme={theme}
