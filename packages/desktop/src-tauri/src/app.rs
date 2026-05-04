@@ -87,6 +87,7 @@ pub fn run() {
             crate::commands::system::open_app,
             crate::commands::system::open_url,
             crate::commands::system::quit_app,
+            crate::commands::system::get_app_version,
             crate::commands::system::get_autostart,
             crate::commands::system::set_autostart,
             crate::commands::updater::check_for_updates,

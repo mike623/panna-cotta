@@ -302,12 +302,13 @@ interface SettingsPopoverProps {
   onClose: () => void
   theme: Theme
   serverPort?: number
+  appVersion?: string
   launchAtLogin: boolean
   onToggleLaunchAtLogin: () => void
   onQuit: () => void
 }
 
-export function SettingsPopover({ open, onClose, theme, serverPort, launchAtLogin, onToggleLaunchAtLogin, onQuit }: SettingsPopoverProps) {
+export function SettingsPopover({ open, onClose, theme, serverPort, appVersion, launchAtLogin, onToggleLaunchAtLogin, onQuit }: SettingsPopoverProps) {
   if (!open) return null
 
   const row = (label: string, right: React.ReactNode) => (
@@ -357,6 +358,12 @@ export function SettingsPopover({ open, onClose, theme, serverPort, launchAtLogi
 
         <div style={{ padding: '4px 0' }}>
           {row('Launch at Login', toggle(launchAtLogin, onToggleLaunchAtLogin))}
+          {appVersion && row(
+            'Version',
+            <span style={{ fontSize: 11.5, color: theme.textFaint, fontFamily: 'ui-monospace, monospace' }}>
+              v{appVersion}
+            </span>
+          )}
         </div>
 
         <div style={{ borderTop: `0.5px solid ${theme.border}`, padding: '4px 0' }}>
@@ -392,12 +399,13 @@ interface ToolbarProps {
   dark: boolean
   onToggleDark: () => void
   serverPort?: number
+  appVersion?: string
   launchAtLogin: boolean
   onToggleLaunchAtLogin: () => void
   onQuit: () => void
 }
 
-export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, onShortcuts, onCommand, onReset, profileName, dirty, dark, onToggleDark, serverPort, launchAtLogin, onToggleLaunchAtLogin, onQuit }: ToolbarProps) {
+export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, onShortcuts, onCommand, onReset, profileName, dirty, dark, onToggleDark, serverPort, appVersion, launchAtLogin, onToggleLaunchAtLogin, onQuit }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const iconBtn = (icon: string, onClick: () => void, opts: { disabled?: boolean; title?: string; active?: boolean } = {}) => (
@@ -496,6 +504,7 @@ export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, on
         onClose={() => setSettingsOpen(false)}
         theme={theme}
         serverPort={serverPort}
+        appVersion={appVersion}
         launchAtLogin={launchAtLogin}
         onToggleLaunchAtLogin={onToggleLaunchAtLogin}
         onQuit={onQuit}

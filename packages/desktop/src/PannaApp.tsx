@@ -150,6 +150,7 @@ export function PannaApp() {
   const [lanUrl, setLanUrl] = useState<string>('')
   const [serverPort, setServerPort] = useState<number | undefined>()
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
+  const [appVersion, setAppVersion] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
   // Derived
@@ -160,11 +161,12 @@ export function PannaApp() {
   useEffect(() => {
     async function load() {
       try {
-        const [tauriProfiles, tauriConfig, serverInfo, autostart] = await Promise.all([
+        const [tauriProfiles, tauriConfig, serverInfo, autostart, version] = await Promise.all([
           invoke<BackendProfile[]>('list_profiles_cmd'),
           invoke<BackendConfig>('get_config'),
           invoke<ServerInfo>('get_server_info').catch(() => null),
           invoke<boolean>('get_autostart').catch(() => false),
+          invoke<string>('get_app_version').catch(() => ''),
         ])
 
         if (serverInfo) {
@@ -172,6 +174,7 @@ export function PannaApp() {
           setServerPort(serverInfo.port)
         }
         setLaunchAtLogin(autostart)
+        setAppVersion(version)
 
         const activeBackend = tauriProfiles.find(p => p.isActive)?.name || tauriProfiles[0]?.name || 'Default'
 
@@ -431,6 +434,7 @@ export function PannaApp() {
           dark={tweaks.dark}
           onToggleDark={() => setTweak('dark', !tweaks.dark)}
           serverPort={serverPort}
+          appVersion={appVersion}
           launchAtLogin={launchAtLogin}
           onToggleLaunchAtLogin={async () => {
             const next = !launchAtLogin

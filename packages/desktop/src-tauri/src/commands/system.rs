@@ -60,6 +60,11 @@ pub async fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 pub async fn quit_app(app: AppHandle) {
     app.exit(0);
 }

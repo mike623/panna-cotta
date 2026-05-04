@@ -2,6 +2,11 @@
 
 All notable changes to Panna Cotta are documented here.
 
+## [0.1.11] - 2026-05-04
+
+### Added
+- Version number displayed in Settings popover (gear icon)
+
 ## [0.1.10] - 2026-05-03
 
 ### Removed
