@@ -12,7 +12,7 @@ import { makeTheme, DEFAULT_TWEAKS } from './theme'
 import type { Tweaks } from './theme'
 import { findAction, makeInitialProfiles } from './data'
 import type { ProfileData, SlotData } from './data'
-import { Glass, DeviceCanvas, ProfilesRail } from './core'
+import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
 import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
 import { Icon } from './icons'
 
@@ -582,8 +582,29 @@ export function PannaApp() {
           )}
         </Glass>
       </div>
-      {/* DragOverlay placeholder — filled in Task 5 */}
-      <DragOverlay>{null}</DragOverlay>
+      <DragOverlay dropAnimation={null}>
+        {activeDragData?.type === 'tile' && activeDragId && (() => {
+          const fromIdx = parseInt((activeDragId as string).replace('tile-', ''), 10)
+          const slot = activePage.slots[fromIdx]
+          return slot ? (
+            <div style={{ width: 84, height: 84, opacity: 0.9, filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.35))' }}>
+              <Tile slot={slot} theme={theme} selected={false} onClick={() => {}} />
+            </div>
+          ) : null
+        })()}
+        {activeDragData?.type === 'action' && (
+          <div style={{
+            padding: '6px 12px', borderRadius: 8,
+            background: theme.dark ? 'rgba(30,30,36,0.95)' : 'rgba(255,255,255,0.95)',
+            border: `0.5px solid ${theme.borderStrong}`,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+            fontSize: 12, fontFamily: theme.font, color: theme.text, fontWeight: 500,
+            whiteSpace: 'nowrap',
+          }}>
+            {activeDragData.name as string}
+          </div>
+        )}
+      </DragOverlay>
       </DndContext>
 
       {/* Overlays */}
