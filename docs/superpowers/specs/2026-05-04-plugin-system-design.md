@@ -239,17 +239,20 @@ src-tauri/plugins/
 
 All actions are fully cross-platform (macOS, Windows, Linux).
 
-| Action UUID | Name | Package |
-|---|---|---|
-| `com.pannacotta.system.open-app` | Open App | `open` (sindresorhus) |
-| `com.pannacotta.system.volume-up` | Volume Up | `loudness` |
-| `com.pannacotta.system.volume-down` | Volume Down | `loudness` |
-| `com.pannacotta.system.volume-mute` | Mute Toggle | `loudness` |
-| `com.pannacotta.system.set-volume` | Set Volume | `loudness` |
-| `com.pannacotta.system.brightness-up` | Brightness Up | `brightness` (kevva) |
-| `com.pannacotta.system.brightness-down` | Brightness Down | `brightness` (kevva) |
-| `com.pannacotta.system.sleep` | Sleep | inline platform switch |
-| `com.pannacotta.system.lock` | Lock Screen | inline platform switch |
+**Research note:** The Elgato SDK provides no system actions — sleep/lock/brightness are built into the Stream Deck host app, not the plugin SDK. OpenDeck ships a native Rust plugin with a general-purpose `run_command` action. We adopt the same pattern: named convenience actions with sensible platform defaults, plus a `run-command` action for power users on non-standard platforms.
+
+| Action UUID | Name | Implementation | Settings |
+|---|---|---|---|
+| `com.pannacotta.system.run-command` | Run Command | `child_process` (`sh -c` / `cmd /C`) | `{ "command": "..." }` |
+| `com.pannacotta.system.open-app` | Open App | `open` (sindresorhus) | `{ "appName": "..." }` |
+| `com.pannacotta.system.volume-up` | Volume Up | `loudness` | `{ "step": 10 }` |
+| `com.pannacotta.system.volume-down` | Volume Down | `loudness` | `{ "step": 10 }` |
+| `com.pannacotta.system.volume-mute` | Mute Toggle | `loudness` | `{}` |
+| `com.pannacotta.system.set-volume` | Set Volume | `loudness` | `{ "level": 50 }` |
+| `com.pannacotta.system.brightness-up` | Brightness Up | `brightness` (kevva) | `{ "step": 0.1 }` |
+| `com.pannacotta.system.brightness-down` | Brightness Down | `brightness` (kevva) | `{ "step": 0.1 }` |
+| `com.pannacotta.system.sleep` | Sleep | platform switch | `{}` |
+| `com.pannacotta.system.lock` | Lock Screen | platform switch | `{}` |
 
 ```typescript
 import { exec } from 'child_process'
@@ -260,14 +263,20 @@ import brightness from 'brightness'  // macOS: osx-brightness, Windows: nircmd, 
 
 const run = promisify(exec)
 
-// sleep — no npm package worth adding; 3 lines covers all platforms
+// run-command: sh -c on Unix, cmd /C on Windows (same as OpenDeck)
+const runCommand = (cmd: string) =>
+  process.platform === 'win32'
+    ? run(`cmd /C ${cmd}`)
+    : run(cmd, { shell: '/bin/sh' })
+
+// sleep and lock: platform switch with sensible defaults
+// users on unusual platforms override via run-command instead
 const sleep = () => ({
   darwin: () => run('pmset sleepnow'),
   win32:  () => run('rundll32.exe powrprof.dll,SetSuspendState 0,1,0'),
   linux:  () => run('systemctl suspend'),
 })[process.platform]?.()
 
-// lock — same approach
 const lock = () => ({
   darwin: () => run('open -a ScreenSaverEngine'),
   win32:  () => run('rundll32.exe user32.dll,LockWorkStation'),
@@ -277,7 +286,7 @@ const lock = () => ({
 
 `loudness` is a native addon compiled against pinned Node.js v22 LTS. Pre-built binaries for all target platforms are committed into the plugin directory — no `npm install` at runtime. `open` and `brightness` are pure JS and committed as-is.
 
-`pannacotta.shell` custom host extension is **not needed** — Node.js plugins can call `child_process.exec` directly. The system plugin is a standard Elgato-compatible plugin with no custom protocol.
+`pannacotta.shell` custom host extension is **not needed** — Node.js plugins call `child_process` directly. The system plugin is a standard Elgato-compatible plugin with no custom protocol.
 
 ### `com.pannacotta.browser` actions
 
@@ -408,8 +417,18 @@ packages/
   plugins/
     com.pannacotta.system/
       manifest.json
-      src/plugin.ts
+      src/
+        plugin.ts                  ← action registration + keyDown dispatch
+        actions/
+          runCommand.ts            ← sh -c / cmd /C cross-platform
+          openApp.ts               ← open (sindresorhus)
+          volume.ts                ← loudness
+          brightness.ts            ← brightness (kevva)
+          sleep.ts                 ← platform switch
+          lock.ts                  ← platform switch
       bin/plugin.js                ← compiled output, committed
+      node_modules/
+        loudness/prebuilds/        ← pre-built native binaries per platform
     com.pannacotta.browser/
       manifest.json
       src/plugin.ts
