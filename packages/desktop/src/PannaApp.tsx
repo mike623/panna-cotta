@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { makeTheme, DEFAULT_TWEAKS } from './theme'
 import type { Tweaks } from './theme'
 import { findAction, makeInitialProfiles } from './data'
@@ -152,6 +160,9 @@ export function PannaApp() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [activeDragData, setActiveDragData] = useState<Record<string, unknown> | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   // Derived
   const activeProfile = state.profiles.find(p => p.id === state.activeProfileId)!
@@ -345,6 +356,28 @@ export function PannaApp() {
     setSelectedSlot(null)
   }
 
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    setActiveDragId(active.id as string)
+    setActiveDragData((active.data.current as Record<string, unknown>) ?? null)
+  }
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setActiveDragId(null)
+    setActiveDragData(null)
+    if (!over) return
+    const slotIdx = parseInt((over.id as string).replace('slot-', ''), 10)
+    const d = active.data.current as {
+      type: string
+      from?: number
+      actionId?: string
+      name?: string
+      value?: string
+      iconOverride?: string
+    }
+    if (d.type === 'action') onDropAction(slotIdx, { actionId: d.actionId!, name: d.name!, value: d.value || '', iconOverride: d.iconOverride })
+    if (d.type === 'tile')   onReorder(d.from!, slotIdx)
+  }
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -446,6 +479,12 @@ export function PannaApp() {
       </div>
 
       {/* Body — three zones */}
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => { setActiveDragId(null); setActiveDragData(null) }}
+      >
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14, padding: 14, position: 'relative', zIndex: 1 }}>
         {/* Left: profiles */}
         <ProfilesRail
@@ -513,8 +552,7 @@ export function PannaApp() {
             selectedSlot={selectedSlot}
             theme={theme}
             onSlotClick={onSlotClick}
-            onDropAction={onDropAction}
-            onReorder={onReorder}
+            activeDragId={activeDragId}
           />
         </Glass>
 
@@ -543,6 +581,9 @@ export function PannaApp() {
           )}
         </Glass>
       </div>
+      {/* DragOverlay placeholder — filled in Task 5 */}
+      <DragOverlay>{null}</DragOverlay>
+      </DndContext>
 
       {/* Overlays */}
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} theme={theme} onAction={onCmd} />
