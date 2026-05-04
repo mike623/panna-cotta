@@ -356,16 +356,17 @@ export function PannaApp() {
     setSelectedSlot(null)
   }
 
-  const handleDragStart = ({ active }: DragStartEvent) => {
+  const handleDragStart = useCallback(({ active }: DragStartEvent) => {
     setActiveDragId(active.id as string)
     setActiveDragData((active.data.current as Record<string, unknown>) ?? null)
-  }
+  }, [])
 
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+  const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
     setActiveDragId(null)
     setActiveDragData(null)
     if (!over) return
     const slotIdx = parseInt((over.id as string).replace('slot-', ''), 10)
+    if (isNaN(slotIdx)) return
     const d = active.data.current as {
       type: string
       from?: number
@@ -376,7 +377,7 @@ export function PannaApp() {
     }
     if (d.type === 'action') onDropAction(slotIdx, { actionId: d.actionId!, name: d.name!, value: d.value || '', iconOverride: d.iconOverride })
     if (d.type === 'tile')   onReorder(d.from!, slotIdx)
-  }
+  }, [onDropAction, onReorder])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
