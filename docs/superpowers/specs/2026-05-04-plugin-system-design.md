@@ -222,7 +222,14 @@ Current hardcoded actions become two proper plugins bundled as Tauri resources. 
 src-tauri/plugins/
   com.pannacotta.system.sdPlugin/
     manifest.json
-    bin/plugin.js              ← compiled, committed
+    bin/plugin.js                     ← compiled, committed
+    node_modules/
+      loudness/
+        prebuilds/
+          darwin-arm64/loudness.node  ← pre-built native addon
+          darwin-x64/loudness.node
+          win32-x64/loudness.node
+          linux-x64/loudness.node
   com.pannacotta.browser.sdPlugin/
     manifest.json
     bin/plugin.js
@@ -230,16 +237,35 @@ src-tauri/plugins/
 
 ### `com.pannacotta.system` actions
 
-| Action UUID | Name |
-|---|---|
-| `com.pannacotta.system.open-app` | Open App |
-| `com.pannacotta.system.volume-up` | Volume Up |
-| `com.pannacotta.system.volume-down` | Volume Down |
-| `com.pannacotta.system.volume-mute` | Mute Toggle |
-| `com.pannacotta.system.brightness-up` | Brightness Up |
-| `com.pannacotta.system.brightness-down` | Brightness Down |
-| `com.pannacotta.system.sleep` | Sleep |
-| `com.pannacotta.system.lock` | Lock Screen |
+| Action UUID | Name | Implementation |
+|---|---|---|
+| `com.pannacotta.system.open-app` | Open App | `pannacotta.shell` |
+| `com.pannacotta.system.volume-up` | Volume Up | `loudness` |
+| `com.pannacotta.system.volume-down` | Volume Down | `loudness` |
+| `com.pannacotta.system.volume-mute` | Mute Toggle | `loudness` |
+| `com.pannacotta.system.set-volume` | Set Volume | `loudness` |
+| `com.pannacotta.system.brightness-up` | Brightness Up | `pannacotta.shell` |
+| `com.pannacotta.system.brightness-down` | Brightness Down | `pannacotta.shell` |
+| `com.pannacotta.system.sleep` | Sleep | `pannacotta.shell` |
+| `com.pannacotta.system.lock` | Lock Screen | `pannacotta.shell` |
+
+Volume actions use [`loudness`](https://github.com/LinusU/node-loudness) — a native Node.js addon that controls system volume cross-platform (macOS, Windows, Linux) without shell calls:
+
+```typescript
+import loudness from 'loudness'
+
+// volume-up
+const vol = await loudness.getVolume()
+await loudness.setVolume(Math.min(100, vol + 10))
+
+// volume-mute toggle
+await loudness.setMuted(!(await loudness.getMuted()))
+
+// set-volume (uses action settings: { "level": 50 })
+await loudness.setVolume(settings.level)
+```
+
+`loudness` is a native addon compiled against the pinned Node.js v22 LTS. Pre-built binaries for all target platforms are committed into the plugin directory — no `npm install` at runtime.
 
 ### `com.pannacotta.browser` actions
 
@@ -249,13 +275,15 @@ src-tauri/plugins/
 
 ### `pannacotta.shell` extension event
 
-Built-in plugins need to run shell commands. They send a custom event:
+Remaining macOS-specific actions (open-app, brightness, sleep, lock) send a custom event:
 
 ```json
 { "event": "pannacotta.shell", "payload": { "cmd": "osascript", "args": [...] } }
 ```
 
 Host accepts this only from plugins with `"Builtin": true` in their manifest. Third-party plugins sending this event are silently ignored. This is the only host extension beyond the standard Elgato protocol.
+
+Volume actions no longer use `pannacotta.shell` — they use `loudness` directly.
 
 The entire `execute_command` match block in `commands/system.rs` is deleted. Logic moves to `com.pannacotta.system` plugin.
 
