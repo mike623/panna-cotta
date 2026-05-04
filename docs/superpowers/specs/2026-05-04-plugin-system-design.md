@@ -226,7 +226,7 @@ src-tauri/plugins/
     node_modules/
       loudness/
         prebuilds/
-          darwin-arm64/loudness.node  ← pre-built native addon
+          darwin-arm64/loudness.node  ← pre-built native addon (Node v22 LTS)
           darwin-x64/loudness.node
           win32-x64/loudness.node
           linux-x64/loudness.node
@@ -237,53 +237,53 @@ src-tauri/plugins/
 
 ### `com.pannacotta.system` actions
 
-| Action UUID | Name | Implementation |
+All actions are fully cross-platform (macOS, Windows, Linux).
+
+| Action UUID | Name | Package |
 |---|---|---|
-| `com.pannacotta.system.open-app` | Open App | `pannacotta.shell` |
+| `com.pannacotta.system.open-app` | Open App | `open` (sindresorhus) |
 | `com.pannacotta.system.volume-up` | Volume Up | `loudness` |
 | `com.pannacotta.system.volume-down` | Volume Down | `loudness` |
 | `com.pannacotta.system.volume-mute` | Mute Toggle | `loudness` |
 | `com.pannacotta.system.set-volume` | Set Volume | `loudness` |
-| `com.pannacotta.system.brightness-up` | Brightness Up | `pannacotta.shell` |
-| `com.pannacotta.system.brightness-down` | Brightness Down | `pannacotta.shell` |
-| `com.pannacotta.system.sleep` | Sleep | `pannacotta.shell` |
-| `com.pannacotta.system.lock` | Lock Screen | `pannacotta.shell` |
-
-Volume actions use [`loudness`](https://github.com/LinusU/node-loudness) — a native Node.js addon that controls system volume cross-platform (macOS, Windows, Linux) without shell calls:
+| `com.pannacotta.system.brightness-up` | Brightness Up | `brightness` (kevva) |
+| `com.pannacotta.system.brightness-down` | Brightness Down | `brightness` (kevva) |
+| `com.pannacotta.system.sleep` | Sleep | inline platform switch |
+| `com.pannacotta.system.lock` | Lock Screen | inline platform switch |
 
 ```typescript
-import loudness from 'loudness'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import { openApp } from 'open'       // macOS: open, Windows: start, Linux: xdg-open
+import loudness from 'loudness'      // macOS/Windows/Linux ALSA — native addon
+import brightness from 'brightness'  // macOS: osx-brightness, Windows: nircmd, Linux: xrandr
 
-// volume-up
-const vol = await loudness.getVolume()
-await loudness.setVolume(Math.min(100, vol + 10))
+const run = promisify(exec)
 
-// volume-mute toggle
-await loudness.setMuted(!(await loudness.getMuted()))
+// sleep — no npm package worth adding; 3 lines covers all platforms
+const sleep = () => ({
+  darwin: () => run('pmset sleepnow'),
+  win32:  () => run('rundll32.exe powrprof.dll,SetSuspendState 0,1,0'),
+  linux:  () => run('systemctl suspend'),
+})[process.platform]?.()
 
-// set-volume (uses action settings: { "level": 50 })
-await loudness.setVolume(settings.level)
+// lock — same approach
+const lock = () => ({
+  darwin: () => run('open -a ScreenSaverEngine'),
+  win32:  () => run('rundll32.exe user32.dll,LockWorkStation'),
+  linux:  () => run('loginctl lock-session'),
+})[process.platform]?.()
 ```
 
-`loudness` is a native addon compiled against the pinned Node.js v22 LTS. Pre-built binaries for all target platforms are committed into the plugin directory — no `npm install` at runtime.
+`loudness` is a native addon compiled against pinned Node.js v22 LTS. Pre-built binaries for all target platforms are committed into the plugin directory — no `npm install` at runtime. `open` and `brightness` are pure JS and committed as-is.
+
+`pannacotta.shell` custom host extension is **not needed** — Node.js plugins can call `child_process.exec` directly. The system plugin is a standard Elgato-compatible plugin with no custom protocol.
 
 ### `com.pannacotta.browser` actions
 
-| Action UUID | Name |
-|---|---|
-| `com.pannacotta.browser.open-url` | Open URL |
-
-### `pannacotta.shell` extension event
-
-Remaining macOS-specific actions (open-app, brightness, sleep, lock) send a custom event:
-
-```json
-{ "event": "pannacotta.shell", "payload": { "cmd": "osascript", "args": [...] } }
-```
-
-Host accepts this only from plugins with `"Builtin": true` in their manifest. Third-party plugins sending this event are silently ignored. This is the only host extension beyond the standard Elgato protocol.
-
-Volume actions no longer use `pannacotta.shell` — they use `loudness` directly.
+| Action UUID | Name | Package |
+|---|---|---|
+| `com.pannacotta.browser.open-url` | Open URL | `open` (sindresorhus) |
 
 The entire `execute_command` match block in `commands/system.rs` is deleted. Logic moves to `com.pannacotta.system` plugin.
 
