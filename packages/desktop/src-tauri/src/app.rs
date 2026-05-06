@@ -40,7 +40,7 @@ fn open_admin(app: &AppHandle) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
-        .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| tauri::Error::InvalidIcon(std::io::Error::other(e.to_string())))?;
 
     TrayIconBuilder::with_id("main")
         .icon(icon)

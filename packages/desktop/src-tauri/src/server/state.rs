@@ -115,6 +115,12 @@ pub struct AppState {
     pub csrf_token: String,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         let home = std::env::var("HOME")
@@ -254,19 +260,19 @@ pub async fn migrate_old_config(state: &AppState) -> std::io::Result<()> {
     if !default_json.exists() && !default_toml.exists() {
         let config = if let Ok(raw) = tokio::fs::read_to_string(state.legacy_config_file()).await {
             toml::from_str::<LegacyStreamDeckConfig>(&raw)
-                .map(|l| migrate_config_from_legacy(l))
+                .map(migrate_config_from_legacy)
                 .unwrap_or_else(|_| default_config())
         } else {
             default_config()
         };
         write_json_atomic(&default_json, &config)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         set_active_profile_name(state, "Default").await?;
     } else if default_toml.exists() && !default_json.exists() {
         migrate_toml_profile_to_json(state, "Default")
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
     }
     Ok(())
 }
