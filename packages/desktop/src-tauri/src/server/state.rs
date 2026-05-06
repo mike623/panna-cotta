@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use rand::Rng;
+use rand::{Rng, rngs::OsRng};
 
 #[derive(Debug, Deserialize)]
 pub struct LegacyButton {
@@ -120,7 +120,7 @@ impl AppState {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
-        let bytes: [u8; 32] = rand::thread_rng().gen();
+        let bytes: [u8; 32] = OsRng.gen();
         let csrf_token: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
         Self {
             config_dir: PathBuf::from(home).join(".panna-cotta"),
