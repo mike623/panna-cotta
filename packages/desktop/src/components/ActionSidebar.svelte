@@ -8,17 +8,17 @@
 
   const ACTION_GROUPS = [
     { name: 'Browser', icon: '🌐', items: [
-      { name: 'Open URL', icon: '🔗', type: 'browser' as const, action: 'https://', iconName: 'link' },
+      { name: 'Open URL', icon: '🔗', actionUUID: 'com.pannacotta.browser.open-url', settings: { url: 'https://' }, iconName: 'link' },
     ]},
     { name: 'System', icon: '⚙️', items: [
-      { name: 'Open App', icon: '🖥', type: 'system' as const, action: '', iconName: 'terminal' },
-      { name: 'Volume Up', icon: '🔊', type: 'system' as const, action: 'volume-up', iconName: 'volume-2' },
-      { name: 'Volume Down', icon: '🔉', type: 'system' as const, action: 'volume-down', iconName: 'volume-1' },
-      { name: 'Mute Toggle', icon: '🔇', type: 'system' as const, action: 'volume-mute', iconName: 'volume-x' },
-      { name: 'Brightness Up', icon: '☀️', type: 'system' as const, action: 'brightness-up', iconName: 'sun' },
-      { name: 'Brightness Down', icon: '🌙', type: 'system' as const, action: 'brightness-down', iconName: 'moon' },
-      { name: 'Sleep', icon: '💤', type: 'system' as const, action: 'sleep', iconName: 'power' },
-      { name: 'Lock Screen', icon: '🔒', type: 'system' as const, action: 'lock', iconName: 'lock' },
+      { name: 'Open App', icon: '🖥', actionUUID: 'com.pannacotta.system.open-app', settings: { appName: '' }, iconName: 'terminal' },
+      { name: 'Volume Up', icon: '🔊', actionUUID: 'com.pannacotta.system.volume-up', settings: {}, iconName: 'volume-2' },
+      { name: 'Volume Down', icon: '🔉', actionUUID: 'com.pannacotta.system.volume-down', settings: {}, iconName: 'volume-1' },
+      { name: 'Mute Toggle', icon: '🔇', actionUUID: 'com.pannacotta.system.volume-mute', settings: {}, iconName: 'volume-x' },
+      { name: 'Brightness Up', icon: '☀️', actionUUID: 'com.pannacotta.system.brightness-up', settings: {}, iconName: 'sun' },
+      { name: 'Brightness Down', icon: '🌙', actionUUID: 'com.pannacotta.system.brightness-down', settings: {}, iconName: 'moon' },
+      { name: 'Sleep', icon: '💤', actionUUID: 'com.pannacotta.system.sleep', settings: {}, iconName: 'power' },
+      { name: 'Lock Screen', icon: '🔒', actionUUID: 'com.pannacotta.system.lock', settings: {}, iconName: 'lock' },
     ]},
   ]
 
@@ -42,7 +42,7 @@
           {#each group.items as item}
             <button
               class="action-item"
-              on:click={() => dispatch('use', { name: item.name, type: item.type, icon: item.iconName, action: item.action })}
+              on:click={() => dispatch('use', { name: item.name, actionUUID: item.actionUUID, icon: item.iconName, settings: item.settings })}
             >
               <span class="action-item-icon">{item.icon}</span>
               {item.name}

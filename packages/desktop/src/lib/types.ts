@@ -1,8 +1,10 @@
 export interface Button {
   name: string
-  type: 'browser' | 'system'
   icon: string
-  action: string
+  actionUUID: string
+  context: string
+  settings: Record<string, unknown>
+  lanAllowed?: boolean | null
 }
 
 export interface Grid {

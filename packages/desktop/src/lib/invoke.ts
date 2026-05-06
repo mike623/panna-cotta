@@ -39,3 +39,6 @@ export const openUrl = (url: string) =>
 
 export const getServerInfo = () =>
   invoke<ServerInfo>('get_server_info')
+
+export const getCsrfToken = () =>
+  invoke<string>('get_csrf_token')
