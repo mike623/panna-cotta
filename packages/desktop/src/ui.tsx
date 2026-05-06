@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { invoke } from '@tauri-apps/api/core'
 import { useDraggable } from '@dnd-kit/core'
 import { Icon } from './icons'
 import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
@@ -396,6 +397,19 @@ export function SettingsPopover({ open, onClose, theme, serverPort, appVersion, 
         </div>
 
         <div style={{ borderTop: `0.5px solid ${theme.border}`, padding: '4px 0' }}>
+          <button
+            onClick={() => invoke('open_log_folder').catch(() => {})}
+            style={{
+              all: 'unset', cursor: 'pointer', width: '100%', boxSizing: 'border-box',
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 14px', color: theme.textMute, fontSize: 12,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+          >
+            <Icon name="folder" size={13} strokeWidth={1.8} />
+            Open Logs
+          </button>
           <button onClick={onQuit} style={{
             all: 'unset', cursor: 'pointer', width: '100%', boxSizing: 'border-box',
             display: 'flex', alignItems: 'center', gap: 8,
