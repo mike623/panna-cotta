@@ -163,7 +163,7 @@ pub fn profile_toml_path(state: &AppState, name: &str) -> PathBuf {
 
 async fn write_json_atomic(path: &PathBuf, value: &impl serde::Serialize) -> Result<(), String> {
     let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    let tmp = PathBuf::from(format!("{}.tmp", path.display()));
+    let tmp = path.with_extension("json.tmp");
     tokio::fs::write(&tmp, json).await.map_err(|e| e.to_string())?;
     tokio::fs::rename(&tmp, path).await.map_err(|e| e.to_string())
 }
@@ -335,6 +335,10 @@ pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> 
     if json_path.exists() {
         tokio::fs::remove_file(&json_path).await.map_err(|e| e.to_string())?;
     }
+    let toml_path = profile_toml_path(state, &safe);
+    if toml_path.exists() {
+        tokio::fs::remove_file(&toml_path).await.map_err(|e| e.to_string())?;
+    }
     let _ = tokio::fs::remove_file(&toml_bak).await;
     let _ = tokio::fs::remove_file(&json_tmp).await;
     let active = get_active_profile_name(state).await;
@@ -357,9 +361,7 @@ pub async fn rename_profile(state: &AppState, old: &str, new: &str) -> Result<()
     let new_json = profile_json_path(state, &new_safe);
     tokio::fs::create_dir_all(state.profiles_dir()).await.map_err(|e| e.to_string())?;
     if old_json.exists() {
-        let content = tokio::fs::read_to_string(&old_json).await.map_err(|e| e.to_string())?;
-        tokio::fs::write(&new_json, content).await.map_err(|e| e.to_string())?;
-        tokio::fs::remove_file(&old_json).await.map_err(|e| e.to_string())?;
+        tokio::fs::rename(&old_json, &new_json).await.map_err(|e| e.to_string())?;
     } else if old_toml.exists() {
         let cfg = read_profile(state, &old_safe).await;
         write_json_atomic(&new_json, &cfg).await?;
