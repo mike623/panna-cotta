@@ -32,6 +32,67 @@ fn csrf_eq(a: &str, b: &str) -> bool {
     a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+async fn validate_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|_| format!("invalid URL: {url}"))?;
+    match parsed.scheme() {
+        "https" | "http" => Ok(()),
+        s => Err(format!("URL scheme '{s}' not allowed; use https or http")),
+    }
+}
+
+async fn run_shell_command(cmd: &str) -> Result<(), String> {
+    let status = if cfg!(windows) {
+        tokio::process::Command::new("cmd").args(["/C", cmd]).status().await
+    } else {
+        tokio::process::Command::new("sh").args(["-c", cmd]).status().await
+    };
+    status
+        .map_err(|e| e.to_string())
+        .and_then(|s| if s.success() { Ok(()) } else { Err(format!("command exited: {s}")) })
+}
+
+async fn dispatch_context(button: &crate::server::state::Button) -> Result<(), String> {
+    let uuid = button.action_uuid.as_str();
+    let s = &button.settings;
+    match uuid {
+        "com.pannacotta.system.open-app" => {
+            let app = s.get("appName").and_then(|v| v.as_str()).ok_or("missing appName")?;
+            crate::commands::system::open_app(app.to_string()).await
+        }
+        "com.pannacotta.browser.open-url" => {
+            let url = s.get("url").and_then(|v| v.as_str()).ok_or("missing url")?;
+            validate_url(url).await?;
+            crate::commands::system::open_url(url.to_string()).await
+        }
+        "com.pannacotta.system.volume-up" => {
+            crate::commands::system::execute_command("volume-up".into(), "".into()).await
+        }
+        "com.pannacotta.system.volume-down" => {
+            crate::commands::system::execute_command("volume-down".into(), "".into()).await
+        }
+        "com.pannacotta.system.volume-mute" => {
+            crate::commands::system::execute_command("volume-mute".into(), "".into()).await
+        }
+        "com.pannacotta.system.brightness-up" => {
+            crate::commands::system::execute_command("brightness-up".into(), "".into()).await
+        }
+        "com.pannacotta.system.brightness-down" => {
+            crate::commands::system::execute_command("brightness-down".into(), "".into()).await
+        }
+        "com.pannacotta.system.sleep" => {
+            crate::commands::system::execute_command("sleep".into(), "".into()).await
+        }
+        "com.pannacotta.system.lock" => {
+            crate::commands::system::execute_command("lock".into(), "".into()).await
+        }
+        "com.pannacotta.system.run-command" => {
+            let cmd = s.get("command").and_then(|v| v.as_str()).ok_or("missing command")?;
+            run_shell_command(cmd).await
+        }
+        _ => Err(format!("unknown actionUUID: {uuid}")),
+    }
+}
+
 async fn require_admin(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -242,13 +303,58 @@ async fn delete_profile_handler(
 
 // ── System handlers ───────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-struct ExecuteBody { action: String, target: String }
+#[derive(serde::Deserialize)]
+struct ExecuteBody {
+    context: Option<String>,
+    action: Option<String>,
+    target: Option<String>,
+}
 
-async fn execute_handler(Json(body): Json<ExecuteBody>) -> impl IntoResponse {
-    match crate::commands::system::execute_command(body.action, body.target).await {
-        Ok(_) => Json(json!({"success": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": e}))).into_response(),
+async fn execute_handler(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<ExecuteBody>,
+) -> impl IntoResponse {
+    let is_local = is_localhost_addr(&addr);
+
+    if is_local {
+        let csrf_ok = headers
+            .get("X-Panna-CSRF")
+            .and_then(|v| v.to_str().ok())
+            .map(|t| csrf_eq(t, &state.csrf_token))
+            .unwrap_or(false);
+        if !csrf_ok {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "CSRF required"}))).into_response();
+        }
+    }
+
+    if let Some(ctx) = body.context {
+        let config = match use_stream_deck_config(&state).await {
+            Ok(c) => c,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        };
+        let button = match config.buttons.iter().find(|b| b.context == ctx) {
+            Some(b) => b.clone(),
+            None => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "context not found"}))).into_response(),
+        };
+        if button.lan_allowed == Some(false) && !is_local {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "not allowed from LAN"}))).into_response();
+        }
+        match dispatch_context(&button).await {
+            Ok(_) => Json(serde_json::json!({"success": true})).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        }
+    } else if let (Some(action), Some(target)) = (body.action, body.target) {
+        if !is_local {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "use {context} from LAN"}))).into_response();
+        }
+        match crate::commands::system::execute_command(action, target).await {
+            Ok(_) => Json(serde_json::json!({"success": true})).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        }
+    } else {
+        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "provide {context} or {action,target}"}))).into_response()
     }
 }
 
@@ -288,6 +394,7 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
+    use tempfile;
 
     fn make_state(csrf: &str) -> Arc<AppState> {
         use std::sync::Mutex;
@@ -361,6 +468,103 @@ mod tests {
             .unwrap();
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), 403);
+    }
+
+    async fn state_with_profile(csrf: &str, buttons: Vec<crate::server::state::Button>) -> Arc<AppState> {
+        let dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let dir_path = dir.keep(); // persist dir on disk so it lives past function
+        let profiles_dir = dir_path.join("profiles");
+        tokio::fs::create_dir_all(&profiles_dir).await.unwrap();
+        let config = crate::server::state::StreamDeckConfig {
+            grid: crate::server::state::Grid { rows: 2, cols: 3 },
+            buttons,
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        tokio::fs::write(profiles_dir.join("Default.json"), json).await.unwrap();
+        tokio::fs::write(dir_path.join("active-profile"), "Default").await.unwrap();
+        Arc::new(AppState {
+            config_dir: dir_path,
+            port: std::sync::Mutex::new(None),
+            csrf_token: csrf.to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn execute_context_from_lan_accepted() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Vol Up".into(),
+            icon: "v".into(),
+            action_uuid: "com.pannacotta.system.volume-up".into(),
+            context: "ctx001".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("tok", buttons).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::from(r#"{"context":"ctx001"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        // 200 or 500 (system command may fail in test env), but NOT 400 or 403
+        assert!(res.status() != 400 && res.status() != 403, "got {}", res.status());
+    }
+
+    #[tokio::test]
+    async fn execute_legacy_from_lan_rejected() {
+        let state = make_state("tok");
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::from(r#"{"action":"open-app","target":"Calculator"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn execute_lan_allowed_false_returns_403() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Secret".into(),
+            icon: "x".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "secret1".into(),
+            settings: serde_json::json!({"appName": "Terminal"}),
+            lan_allowed: Some(false),
+        }];
+        let state = state_with_profile("tok", buttons).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::from(r#"{"context":"secret1"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn execute_unknown_context_returns_404() {
+        let buttons = vec![];
+        let state = state_with_profile("tok", buttons).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::from(r#"{"context":"nosuchctx"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 404);
     }
 }
 
