@@ -390,6 +390,9 @@ async fn open_app_handler(Json(body): Json<AppBody>) -> impl IntoResponse {
 struct UrlBody { url: String }
 
 async fn open_url_handler(Json(body): Json<UrlBody>) -> impl IntoResponse {
+    if let Err(e) = validate_url(&body.url).await {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response();
+    }
     match crate::commands::system::open_url(body.url).await {
         Ok(_) => Json(json!({"success": true})).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": e}))).into_response(),
@@ -615,6 +618,21 @@ mod tests {
         // Other fields still present
         assert_eq!(btn["context"], "ctx123");
         assert_eq!(btn["name"], "Secret");
+    }
+
+    #[tokio::test]
+    async fn open_url_from_lan_rejected() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/open-url")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::from(r#"{"url":"https://example.com"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
     }
 
     #[tokio::test]
