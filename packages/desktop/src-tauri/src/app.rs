@@ -6,6 +6,8 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 use crate::server::state::AppState;
+use tracing_appender::rolling;
+use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn update_tray_tooltip(app: &AppHandle, port: Option<u16>, running: bool) {
     if let Some(tray) = app.tray_by_id("main") {
@@ -65,6 +67,28 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>> {
 }
 
 pub fn run() {
+    // ── Logging init ─────────────────────────────────────────────────────────
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    let log_dir = std::path::PathBuf::from(&home)
+        .join(".panna-cotta")
+        .join("logs");
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let file_appender = rolling::daily(&log_dir, "panna-cotta.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_writer(non_blocking))
+        .init();
+
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "app starting");
+
     let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
