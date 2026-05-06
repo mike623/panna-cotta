@@ -25,6 +25,13 @@ pub fn is_localhost_addr(addr: &SocketAddr) -> bool {
         || ip == std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
 }
 
+fn csrf_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 async fn require_admin(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -38,7 +45,7 @@ async fn require_admin(
     let token_ok = headers
         .get("X-Panna-CSRF")
         .and_then(|v| v.to_str().ok())
-        .map(|t| t == state.csrf_token)
+        .map(|t| csrf_eq(t, &state.csrf_token))
         .unwrap_or(false);
     if !token_ok {
         return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "invalid CSRF token"}))).into_response();
