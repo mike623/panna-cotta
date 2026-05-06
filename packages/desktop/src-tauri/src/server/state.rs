@@ -313,7 +313,11 @@ pub async fn create_profile(
     tokio::fs::create_dir_all(state.profiles_dir())
         .await
         .map_err(|e| e.to_string())?;
-    write_json_atomic(&json_path, config.unwrap_or(&default_config())).await
+    let result = write_json_atomic(&json_path, config.unwrap_or(&default_config())).await;
+    if result.is_ok() {
+        tracing::info!(profile = %safe, "profile created");
+    }
+    result
 }
 
 pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String> {
@@ -323,9 +327,13 @@ pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String
     if !json_path.exists() && !toml_path.exists() {
         return Err(format!("Profile \"{}\" not found", safe));
     }
-    set_active_profile_name(state, &safe)
+    let result = set_active_profile_name(state, &safe)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    if result.is_ok() {
+        tracing::info!(profile = %safe, "profile activated");
+    }
+    result
 }
 
 pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> {
@@ -352,6 +360,7 @@ pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> 
             let _ = set_active_profile_name(state, &p.name).await;
         }
     }
+    tracing::info!(profile = %safe, "profile deleted");
     Ok(())
 }
 
@@ -378,6 +387,7 @@ pub async fn rename_profile(state: &AppState, old: &str, new: &str) -> Result<()
     if active == old_safe {
         let _ = set_active_profile_name(state, &new_safe).await;
     }
+    tracing::info!(from = %old_safe, to = %new_safe, "profile renamed");
     Ok(())
 }
 
@@ -398,7 +408,11 @@ pub async fn save_stream_deck_config(
     tokio::fs::create_dir_all(state.profiles_dir())
         .await
         .map_err(|e| e.to_string())?;
-    write_json_atomic(&profile_json_path(state, &active), config).await
+    let result = write_json_atomic(&profile_json_path(state, &active), config).await;
+    if result.is_ok() {
+        tracing::info!(profile = %active, "config saved");
+    }
+    result
 }
 
 #[cfg(test)]
