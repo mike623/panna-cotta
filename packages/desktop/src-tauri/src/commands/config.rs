@@ -86,3 +86,8 @@ pub async fn open_config_folder(state: State<'_, Arc<AppState>>) -> Result<(), S
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_csrf_token(state: State<'_, Arc<AppState>>) -> String {
+    state.csrf_token.clone()
+}

@@ -11,10 +11,44 @@
     toast: { message: string; ok: boolean }
   }>()
 
+  const MEDIA_ACTIONS = ['volume-up', 'volume-down', 'volume-mute', 'brightness-up', 'brightness-down', 'sleep', 'lock']
+
   let name = ''
-  let type: 'browser' | 'system' = 'browser'
+  let formType: 'browser' | 'system' = 'browser'
   let icon = ''
   let action = ''
+
+  function buttonToForm(btn: Button): { formType: 'browser' | 'system'; action: string } {
+    const uuid = btn.actionUUID
+    if (uuid === 'com.pannacotta.browser.open-url') {
+      return { formType: 'browser', action: String((btn.settings as Record<string, unknown>)?.url ?? '') }
+    }
+    if (uuid.startsWith('com.pannacotta.system.')) {
+      const actionName = uuid.replace('com.pannacotta.system.', '')
+      if (actionName === 'open-app') {
+        return { formType: 'system', action: String((btn.settings as Record<string, unknown>)?.appName ?? '') }
+      }
+      return { formType: 'system', action: actionName }
+    }
+    return { formType: 'system', action: '' }
+  }
+
+  function formToButton(existingCtx: string): Button {
+    let actionUUID: string
+    let settings: Record<string, unknown>
+    if (formType === 'browser') {
+      actionUUID = 'com.pannacotta.browser.open-url'
+      settings = { url: action.trim() }
+    } else if (MEDIA_ACTIONS.includes(action.trim())) {
+      actionUUID = `com.pannacotta.system.${action.trim()}`
+      settings = {}
+    } else {
+      actionUUID = 'com.pannacotta.system.open-app'
+      settings = { appName: action.trim() }
+    }
+    const context = existingCtx || Math.random().toString(36).slice(2, 14)
+    return { name: name.trim(), icon: icon.trim(), actionUUID, context, settings }
+  }
 
   $: selectedBtn = selectedIndex >= 0 ? (config.buttons[selectedIndex] ?? null) : null
   $: isEditing = selectedBtn !== null
@@ -22,17 +56,24 @@
   $: if (selectedIndex >= 0) {
     const btn = config.buttons[selectedIndex]
     if (btn) {
-      name = btn.name; type = btn.type as 'browser' | 'system'; icon = btn.icon; action = btn.action
+      name = btn.name
+      icon = btn.icon
+      const f = buttonToForm(btn)
+      formType = f.formType
+      action = f.action
     } else {
-      name = ''; type = 'browser'; icon = ''; action = ''
+      name = ''; formType = 'browser'; icon = ''; action = ''
     }
   }
 
   export function prefill(btn: Partial<Button>) {
     if (btn.name !== undefined) name = btn.name
-    if (btn.type !== undefined) type = btn.type as 'browser' | 'system'
     if (btn.icon !== undefined) icon = btn.icon
-    if (btn.action !== undefined) action = btn.action
+    if (btn.actionUUID !== undefined) {
+      const f = buttonToForm({ actionUUID: btn.actionUUID, settings: btn.settings ?? {}, name: '', icon: '', context: '' })
+      formType = f.formType
+      action = f.action
+    }
   }
 
   function toast(message: string, ok: boolean) { dispatch('toast', { message, ok }) }
@@ -41,7 +82,8 @@
     if (!name.trim() || !icon.trim() || !action.trim()) {
       toast('Fill in all fields', false); return
     }
-    const btn: Button = { name: name.trim(), type, icon: icon.trim(), action: action.trim() }
+    const existingCtx = selectedBtn?.context ?? ''
+    const btn = formToButton(existingCtx)
     const newButtons = [...config.buttons]
     if (selectedIndex >= 0) {
       while (newButtons.length <= selectedIndex) newButtons.push(null as unknown as Button)
@@ -63,7 +105,7 @@
   }
 
   function handleClear() {
-    name = ''; type = 'browser'; icon = ''; action = ''
+    name = ''; formType = 'browser'; icon = ''; action = ''
   }
 </script>
 
@@ -77,7 +119,7 @@
     <div class="field"><label for="btn-name">Name</label><input id="btn-name" bind:value={name} placeholder="GitHub" /></div>
     <div class="field">
       <label for="btn-type">Type</label>
-      <select id="btn-type" bind:value={type}>
+      <select id="btn-type" bind:value={formType}>
         <option value="browser">browser</option>
         <option value="system">system</option>
       </select>

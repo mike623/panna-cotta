@@ -1,5 +1,14 @@
 use std::process::Command;
 use tauri::AppHandle;
+use url::Url;
+
+pub fn validate_url_scheme(url: &str) -> Result<(), String> {
+    let parsed = Url::parse(url).map_err(|_| format!("invalid URL: {url}"))?;
+    match parsed.scheme() {
+        "https" | "http" => Ok(()),
+        s => Err(format!("URL scheme '{s}' not allowed; only https and http are accepted")),
+    }
+}
 
 #[tauri::command]
 pub async fn execute_command(action: String, target: String) -> Result<(), String> {
@@ -52,6 +61,7 @@ pub async fn open_app(app_name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
+    validate_url_scheme(&url)?;
     Command::new("open")
         .arg(&url)
         .output()
@@ -80,4 +90,20 @@ pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> 
     use tauri_plugin_autostart::ManagerExt;
     let al = app.autolaunch();
     if enabled { al.enable() } else { al.disable() }.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn open_url_rejects_file_scheme() {
+        assert!(super::validate_url_scheme("file:///etc/passwd").is_err());
+        assert!(super::validate_url_scheme("javascript:alert(1)").is_err());
+        assert!(super::validate_url_scheme("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn open_url_accepts_http_https() {
+        assert!(super::validate_url_scheme("https://example.com").is_ok());
+        assert!(super::validate_url_scheme("http://localhost:3000").is_ok());
+    }
 }
