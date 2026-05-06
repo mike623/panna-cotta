@@ -153,10 +153,35 @@ pub fn safe_profile_name(name: &str) -> String {
     }
 }
 
-pub fn profile_path(state: &AppState, name: &str) -> PathBuf {
-    state
-        .profiles_dir()
-        .join(format!("{}.toml", safe_profile_name(name)))
+pub fn profile_json_path(state: &AppState, name: &str) -> PathBuf {
+    state.profiles_dir().join(format!("{}.json", safe_profile_name(name)))
+}
+
+pub fn profile_toml_path(state: &AppState, name: &str) -> PathBuf {
+    state.profiles_dir().join(format!("{}.toml", safe_profile_name(name)))
+}
+
+async fn write_json_atomic(path: &PathBuf, value: &impl serde::Serialize) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    let tmp = PathBuf::from(format!("{}.tmp", path.display()));
+    tokio::fs::write(&tmp, json).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&tmp, path).await.map_err(|e| e.to_string())
+}
+
+pub async fn migrate_toml_profile_to_json(state: &AppState, name: &str) -> Result<(), String> {
+    let safe = safe_profile_name(name);
+    let toml_path = profile_toml_path(state, &safe);
+    let json_path = profile_json_path(state, &safe);
+    if json_path.exists() {
+        return Ok(());
+    }
+    let raw = tokio::fs::read_to_string(&toml_path).await.map_err(|e| e.to_string())?;
+    let legacy: LegacyStreamDeckConfig = toml::from_str(&raw).map_err(|e| e.to_string())?;
+    let config = migrate_config_from_legacy(legacy);
+    write_json_atomic(&json_path, &config).await?;
+    let bak = state.profiles_dir().join(format!("{}.toml.bak", safe));
+    let _ = tokio::fs::rename(&toml_path, &bak).await;
+    Ok(())
 }
 
 pub fn default_config() -> StreamDeckConfig {
@@ -197,51 +222,73 @@ pub async fn set_active_profile_name(state: &AppState, name: &str) -> std::io::R
 }
 
 pub async fn read_profile(state: &AppState, name: &str) -> StreamDeckConfig {
-    match tokio::fs::read_to_string(profile_path(state, name)).await {
-        Ok(raw) => toml::from_str(&raw).unwrap_or_else(|_| default_config()),
-        Err(_) => default_config(),
+    let safe = safe_profile_name(name);
+    let json_path = profile_json_path(state, &safe);
+    let toml_path = profile_toml_path(state, &safe);
+    if json_path.exists() {
+        if let Ok(raw) = tokio::fs::read_to_string(&json_path).await {
+            if let Ok(cfg) = serde_json::from_str::<StreamDeckConfig>(&raw) {
+                return cfg;
+            }
+        }
     }
+    if toml_path.exists() {
+        if let Ok(raw) = tokio::fs::read_to_string(&toml_path).await {
+            if let Ok(legacy) = toml::from_str::<LegacyStreamDeckConfig>(&raw) {
+                return migrate_config_from_legacy(legacy);
+            }
+        }
+    }
+    default_config()
 }
 
 pub async fn migrate_old_config(state: &AppState) -> std::io::Result<()> {
-    let default_profile = state.profiles_dir().join("Default.toml");
-    if default_profile.exists() {
-        return Ok(());
-    }
     tokio::fs::create_dir_all(state.profiles_dir()).await?;
-    let content = tokio::fs::read_to_string(state.legacy_config_file())
-        .await
-        .unwrap_or_else(|_| toml::to_string(&default_config()).unwrap());
-    tokio::fs::write(default_profile, content).await?;
-    set_active_profile_name(state, "Default").await
+    let default_json = profile_json_path(state, "Default");
+    let default_toml = profile_toml_path(state, "Default");
+    if !default_json.exists() && !default_toml.exists() {
+        let config = if let Ok(raw) = tokio::fs::read_to_string(state.legacy_config_file()).await {
+            toml::from_str::<LegacyStreamDeckConfig>(&raw)
+                .map(|l| migrate_config_from_legacy(l))
+                .unwrap_or_else(|_| default_config())
+        } else {
+            default_config()
+        };
+        write_json_atomic(&default_json, &config)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        set_active_profile_name(state, "Default").await?;
+    } else if default_toml.exists() && !default_json.exists() {
+        migrate_toml_profile_to_json(state, "Default")
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    }
+    Ok(())
 }
 
 pub async fn list_profiles(state: &AppState) -> std::io::Result<Vec<Profile>> {
     migrate_old_config(state).await?;
     let active = get_active_profile_name(state).await;
-    let mut profiles = Vec::new();
-
-    match tokio::fs::read_dir(state.profiles_dir()).await {
-        Ok(mut entries) => {
-            while let Some(entry) = entries.next_entry().await? {
-                let fname = entry.file_name().to_string_lossy().to_string();
-                if fname.ends_with(".toml") {
-                    let name = fname[..fname.len() - 5].to_string();
-                    profiles.push(Profile {
-                        is_active: name == active,
-                        name,
-                    });
+    let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(state.profiles_dir()).await {
+        while let Some(entry) = entries.next_entry().await? {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if fname.ends_with(".json") && !fname.ends_with(".tmp") {
+                names.insert(fname[..fname.len() - 5].to_string());
+            } else if fname.ends_with(".toml") && !fname.ends_with(".bak") {
+                let n = fname[..fname.len() - 5].to_string();
+                if !profile_json_path(state, &n).exists() {
+                    names.insert(n);
                 }
             }
         }
-        Err(_) => {}
     }
-
+    let mut profiles: Vec<Profile> = names
+        .into_iter()
+        .map(|name| Profile { is_active: name == active, name })
+        .collect();
     if profiles.is_empty() {
-        profiles.push(Profile {
-            name: "Default".to_string(),
-            is_active: true,
-        });
+        profiles.push(Profile { name: "Default".to_string(), is_active: true });
     }
     profiles.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(profiles)
@@ -252,50 +299,44 @@ pub async fn create_profile(
     name: &str,
     config: Option<&StreamDeckConfig>,
 ) -> Result<(), String> {
-    migrate_old_config(state)
-        .await
-        .map_err(|e| e.to_string())?;
-    let path = profile_path(state, name);
-    if path.exists() {
-        return Err(format!(
-            "Profile \"{}\" already exists",
-            safe_profile_name(name)
-        ));
+    migrate_old_config(state).await.map_err(|e| e.to_string())?;
+    let safe = safe_profile_name(name);
+    let json_path = profile_json_path(state, &safe);
+    if json_path.exists() {
+        return Err(format!("Profile \"{}\" already exists", safe));
     }
     tokio::fs::create_dir_all(state.profiles_dir())
         .await
         .map_err(|e| e.to_string())?;
-    let content =
-        toml::to_string(config.unwrap_or(&default_config())).map_err(|e| e.to_string())?;
-    tokio::fs::write(path, content)
-        .await
-        .map_err(|e| e.to_string())
+    write_json_atomic(&json_path, config.unwrap_or(&default_config())).await
 }
 
 pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String> {
-    let path = profile_path(state, name);
-    if !path.exists() {
-        return Err(format!(
-            "Profile \"{}\" not found",
-            safe_profile_name(name)
-        ));
+    let safe = safe_profile_name(name);
+    let json_path = profile_json_path(state, &safe);
+    let toml_path = profile_toml_path(state, &safe);
+    if !json_path.exists() && !toml_path.exists() {
+        return Err(format!("Profile \"{}\" not found", safe));
     }
-    set_active_profile_name(state, name)
+    set_active_profile_name(state, &safe)
         .await
         .map_err(|e| e.to_string())
 }
 
 pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> {
-    let profiles = list_profiles(state)
-        .await
-        .map_err(|e| e.to_string())?;
+    let profiles = list_profiles(state).await.map_err(|e| e.to_string())?;
     if profiles.len() <= 1 {
         return Err("Cannot delete the last profile".to_string());
     }
     let safe = safe_profile_name(name);
-    tokio::fs::remove_file(profile_path(state, &safe))
-        .await
-        .map_err(|e| e.to_string())?;
+    let json_path = profile_json_path(state, &safe);
+    let toml_bak = state.profiles_dir().join(format!("{}.toml.bak", safe));
+    let json_tmp = state.profiles_dir().join(format!("{}.json.tmp", safe));
+    if json_path.exists() {
+        tokio::fs::remove_file(&json_path).await.map_err(|e| e.to_string())?;
+    }
+    let _ = tokio::fs::remove_file(&toml_bak).await;
+    let _ = tokio::fs::remove_file(&json_tmp).await;
     let active = get_active_profile_name(state).await;
     if active == safe {
         if let Some(p) = profiles.iter().find(|p| p.name != safe) {
@@ -311,18 +352,21 @@ pub async fn rename_profile(state: &AppState, old: &str, new: &str) -> Result<()
     if old_safe == new_safe {
         return Ok(());
     }
-    let content = tokio::fs::read_to_string(profile_path(state, &old_safe))
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::fs::create_dir_all(state.profiles_dir())
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::fs::write(profile_path(state, &new_safe), content)
-        .await
-        .map_err(|e| e.to_string())?;
-    tokio::fs::remove_file(profile_path(state, &old_safe))
-        .await
-        .map_err(|e| e.to_string())?;
+    let old_json = profile_json_path(state, &old_safe);
+    let old_toml = profile_toml_path(state, &old_safe);
+    let new_json = profile_json_path(state, &new_safe);
+    tokio::fs::create_dir_all(state.profiles_dir()).await.map_err(|e| e.to_string())?;
+    if old_json.exists() {
+        let content = tokio::fs::read_to_string(&old_json).await.map_err(|e| e.to_string())?;
+        tokio::fs::write(&new_json, content).await.map_err(|e| e.to_string())?;
+        tokio::fs::remove_file(&old_json).await.map_err(|e| e.to_string())?;
+    } else if old_toml.exists() {
+        let cfg = read_profile(state, &old_safe).await;
+        write_json_atomic(&new_json, &cfg).await?;
+        tokio::fs::remove_file(&old_toml).await.map_err(|e| e.to_string())?;
+    } else {
+        return Err(format!("Profile \"{}\" not found", old_safe));
+    }
     let active = get_active_profile_name(state).await;
     if active == old_safe {
         let _ = set_active_profile_name(state, &new_safe).await;
@@ -342,23 +386,136 @@ pub async fn save_stream_deck_config(
     state: &AppState,
     config: &StreamDeckConfig,
 ) -> Result<(), String> {
-    migrate_old_config(state)
-        .await
-        .map_err(|e| e.to_string())?;
+    migrate_old_config(state).await.map_err(|e| e.to_string())?;
     let active = get_active_profile_name(state).await;
     tokio::fs::create_dir_all(state.profiles_dir())
         .await
         .map_err(|e| e.to_string())?;
-    let content = toml::to_string(config).map_err(|e| e.to_string())?;
-    tokio::fs::write(profile_path(state, &active), content)
-        .await
-        .map_err(|e| e.to_string())
+    write_json_atomic(&profile_json_path(state, &active), config).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    fn temp_state() -> (AppState, TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState {
+            config_dir: dir.path().to_path_buf(),
+            port: Mutex::new(None),
+        };
+        (state, dir)
+    }
+
+    #[tokio::test]
+    async fn profile_json_path_returns_json_ext() {
+        let (state, _dir) = temp_state();
+        let p = profile_json_path(&state, "Work");
+        assert!(p.to_str().unwrap().ends_with("Work.json"));
+    }
+
+    #[tokio::test]
+    async fn migrate_toml_profile_creates_json_and_backs_up_toml() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let toml_content = r#"
+[grid]
+rows = 2
+cols = 3
+[[buttons]]
+name = "Calculator"
+type = "system"
+icon = "calculator"
+action = "Calculator"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content).await.unwrap();
+        migrate_toml_profile_to_json(&state, "Default").await.unwrap();
+        assert!(profile_json_path(&state, "Default").exists());
+        assert!(!profile_toml_path(&state, "Default").exists());
+        assert!(state.profiles_dir().join("Default.toml.bak").exists());
+    }
+
+    #[tokio::test]
+    async fn migrate_toml_profile_idempotent() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let toml_content = r#"[grid]
+rows = 2
+cols = 3
+[[buttons]]
+name = "A"
+type = "system"
+icon = "x"
+action = "Calculator"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content).await.unwrap();
+        migrate_toml_profile_to_json(&state, "Default").await.unwrap();
+        migrate_toml_profile_to_json(&state, "Default").await.unwrap();
+        assert!(profile_json_path(&state, "Default").exists());
+    }
+
+    #[tokio::test]
+    async fn save_writes_json_not_toml() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let cfg = default_config();
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        assert!(profile_json_path(&state, "Default").exists());
+        let content = tokio::fs::read_to_string(profile_json_path(&state, "Default")).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(parsed["buttons"].is_array());
+        assert_eq!(parsed["buttons"][0]["actionUUID"], "com.pannacotta.system.open-app");
+    }
+
+    #[tokio::test]
+    async fn list_profiles_includes_json_profiles() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let cfg = default_config();
+        let json = serde_json::to_string_pretty(&cfg).unwrap();
+        tokio::fs::write(profile_json_path(&state, "Work"), json).await.unwrap();
+        set_active_profile_name(&state, "Default").await.unwrap();
+        let cfg2 = default_config();
+        let json2 = serde_json::to_string_pretty(&cfg2).unwrap();
+        tokio::fs::write(profile_json_path(&state, "Default"), json2).await.unwrap();
+        let profiles = list_profiles(&state).await.unwrap();
+        assert!(profiles.iter().any(|p| p.name == "Work"));
+        assert!(profiles.iter().any(|p| p.name == "Default"));
+    }
+
+    #[tokio::test]
+    async fn read_json_profile_returns_new_format() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let cfg = default_config();
+        let json = serde_json::to_string_pretty(&cfg).unwrap();
+        tokio::fs::write(profile_json_path(&state, "Default"), json).await.unwrap();
+        set_active_profile_name(&state, "Default").await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.buttons[0].action_uuid, "com.pannacotta.system.open-app");
+        assert_eq!(loaded.buttons[0].context, "aB3dE5fG7hIj");
+    }
+
+    #[tokio::test]
+    async fn read_toml_profile_auto_migrates() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let toml_content = r#"[grid]
+rows = 2
+cols = 3
+[[buttons]]
+name = "Safari"
+type = "browser"
+icon = "safari"
+action = "https://apple.com"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content).await.unwrap();
+        set_active_profile_name(&state, "Default").await.unwrap();
+        let cfg = read_profile(&state, "Default").await;
+        assert_eq!(cfg.buttons[0].action_uuid, "com.pannacotta.browser.open-url");
+        assert_eq!(cfg.buttons[0].settings["url"], "https://apple.com");
+    }
 
     #[test]
     fn button_serde_json_roundtrip() {
@@ -435,15 +592,6 @@ mod tests {
         assert_eq!(cfg.buttons[0].context.len(), 12);
     }
 
-    fn temp_state() -> (AppState, TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let state = AppState {
-            config_dir: dir.path().to_path_buf(),
-            port: Mutex::new(None),
-        };
-        (state, dir)
-    }
-
     #[test]
     fn safe_name_strips_special_chars() {
         assert_eq!(safe_profile_name("My Profile"), "My Profile");
@@ -477,7 +625,7 @@ mod tests {
     async fn migrate_creates_default_profile() {
         let (state, _dir) = temp_state();
         migrate_old_config(&state).await.unwrap();
-        assert!(state.profiles_dir().join("Default.toml").exists());
+        assert!(profile_json_path(&state, "Default").exists());
         let name = get_active_profile_name(&state).await;
         assert_eq!(name, "Default");
     }
@@ -487,7 +635,7 @@ mod tests {
         let (state, _dir) = temp_state();
         migrate_old_config(&state).await.unwrap();
         migrate_old_config(&state).await.unwrap();
-        assert!(state.profiles_dir().join("Default.toml").exists());
+        assert!(profile_json_path(&state, "Default").exists());
     }
 
     #[tokio::test]
@@ -521,7 +669,7 @@ mod tests {
         let (state, _dir) = temp_state();
         create_profile(&state, "Work", None).await.unwrap();
         delete_profile(&state, "Work").await.unwrap();
-        assert!(!profile_path(&state, "Work").exists());
+        assert!(!profile_json_path(&state, "Work").exists());
     }
 
     #[tokio::test]
@@ -537,8 +685,8 @@ mod tests {
         let (state, _dir) = temp_state();
         create_profile(&state, "Work", None).await.unwrap();
         rename_profile(&state, "Work", "Personal").await.unwrap();
-        assert!(profile_path(&state, "Personal").exists());
-        assert!(!profile_path(&state, "Work").exists());
+        assert!(profile_json_path(&state, "Personal").exists());
+        assert!(!profile_json_path(&state, "Work").exists());
     }
 
     #[tokio::test]
