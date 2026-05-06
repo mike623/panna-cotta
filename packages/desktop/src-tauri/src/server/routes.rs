@@ -1,14 +1,16 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
-    http::{header, StatusCode},
+    extract::{ConnectInfo, Path, State},
+    http::{header, HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Json, Redirect, Response},
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use include_dir::{include_dir, Dir};
 use serde::Deserialize;
 use serde_json::json;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::server::state::{
@@ -17,24 +19,57 @@ use crate::server::state::{
     use_stream_deck_config, AppState, StreamDeckConfig,
 };
 
+pub fn is_localhost_addr(addr: &SocketAddr) -> bool {
+    let ip = addr.ip();
+    ip == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        || ip == std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+}
+
+async fn require_admin(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    request: axum::extract::Request,
+    next: Next,
+) -> Response {
+    if !is_localhost_addr(&addr) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "localhost only"}))).into_response();
+    }
+    let token_ok = headers
+        .get("X-Panna-CSRF")
+        .and_then(|v| v.to_str().ok())
+        .map(|t| t == state.csrf_token)
+        .unwrap_or(false);
+    if !token_ok {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "invalid CSRF token"}))).into_response();
+    }
+    next.run(request).await
+}
+
 static APPS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../frontend");
 
 pub fn create_router(state: Arc<AppState>) -> Router {
+    let admin = Router::new()
+        .route("/api/config", put(put_config))
+        .route("/api/profiles", post(create_profile_handler))
+        .route("/api/profiles/:name/activate", post(activate_profile_handler))
+        .route("/api/profiles/:name", patch(rename_profile_handler).delete(delete_profile_handler))
+        .route("/api/open-app", post(open_app_handler))
+        .route("/api/open-url", post(open_url_handler))
+        .route("/api/open-config-folder", post(open_config_folder_handler))
+        .layer(middleware::from_fn_with_state(state.clone(), require_admin));
+
     Router::new()
         .route("/", get(qr_page))
         .route("/apps", get(|| async { Redirect::permanent("/apps/") }))
         .route("/apps/", get(serve_apps_index))
         .route("/apps/*path", get(serve_apps_file))
         .route("/api/health", get(|| async { "OK" }))
-        .route("/api/config", get(get_config).put(put_config))
+        .route("/api/config", get(get_config))
         .route("/api/config/default", get(get_default_config_handler))
-        .route("/api/profiles", get(list_profiles_handler).post(create_profile_handler))
-        .route("/api/profiles/:name/activate", post(activate_profile_handler))
-        .route("/api/profiles/:name", patch(rename_profile_handler).delete(delete_profile_handler))
+        .route("/api/profiles", get(list_profiles_handler))
         .route("/api/execute", post(execute_handler))
-        .route("/api/open-app", post(open_app_handler))
-        .route("/api/open-url", post(open_url_handler))
-        .route("/api/open-config-folder", post(open_config_folder_handler))
+        .merge(admin)
         .with_state(state)
 }
 
@@ -239,5 +274,86 @@ async fn open_config_folder_handler(State(state): State<Arc<AppState>>) -> impl 
     #[cfg(target_os = "linux")]
     let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
     Json(json!({"ok": true}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    fn make_state(csrf: &str) -> Arc<AppState> {
+        use std::sync::Mutex;
+        use std::path::PathBuf;
+        Arc::new(AppState {
+            config_dir: PathBuf::from("/tmp/test-panna"),
+            port: Mutex::new(None),
+            csrf_token: csrf.to_string(),
+        })
+    }
+
+    fn lan_addr() -> std::net::SocketAddr {
+        "192.168.1.100:54321".parse().unwrap()
+    }
+
+    fn local_addr() -> std::net::SocketAddr {
+        "127.0.0.1:54321".parse().unwrap()
+    }
+
+    #[test]
+    fn is_localhost_addr_loopback() {
+        assert!(is_localhost_addr(&"127.0.0.1:0".parse().unwrap()));
+        assert!(is_localhost_addr(&"[::1]:0".parse().unwrap()));
+        assert!(!is_localhost_addr(&"192.168.1.1:0".parse().unwrap()));
+        assert!(!is_localhost_addr(&"10.0.0.1:0".parse().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn admin_route_from_lan_returns_403() {
+        let csrf = "aabbcc";
+        let state = make_state(csrf);
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("PUT")
+            .uri("/api/config")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .header("X-Panna-CSRF", csrf)
+            .body(Body::from(r#"{"grid":{"rows":2,"cols":3},"buttons":[]}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn admin_route_localhost_missing_csrf_returns_403() {
+        let state = make_state("secret123");
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("PUT")
+            .uri("/api/config")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"grid":{"rows":2,"cols":3},"buttons":[]}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn admin_route_localhost_wrong_csrf_returns_403() {
+        let state = make_state("correct_token");
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("PUT")
+            .uri("/api/config")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .header("X-Panna-CSRF", "wrong_token")
+            .body(Body::from(r#"{"grid":{"rows":2,"cols":3},"buttons":[]}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
 }
 
