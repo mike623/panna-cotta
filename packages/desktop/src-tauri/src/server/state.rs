@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use rand::Rng;
 
 #[derive(Debug, Deserialize)]
 pub struct LegacyButton {
@@ -111,6 +112,7 @@ pub struct Profile {
 pub struct AppState {
     pub config_dir: PathBuf,
     pub port: Mutex<Option<u16>>,
+    pub csrf_token: String,
 }
 
 impl AppState {
@@ -118,9 +120,12 @@ impl AppState {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
+        let bytes: [u8; 32] = rand::thread_rng().gen();
+        let csrf_token: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
         Self {
             config_dir: PathBuf::from(home).join(".panna-cotta"),
             port: Mutex::new(None),
+            csrf_token,
         }
     }
 
@@ -401,11 +406,26 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[test]
+    fn app_state_has_csrf_token() {
+        let state = AppState::new();
+        assert_eq!(state.csrf_token.len(), 64); // 32 bytes = 64 hex chars
+        assert!(state.csrf_token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn csrf_tokens_are_unique() {
+        let a = AppState::new();
+        let b = AppState::new();
+        assert_ne!(a.csrf_token, b.csrf_token);
+    }
+
     fn temp_state() -> (AppState, TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
             port: Mutex::new(None),
+            csrf_token: "test_csrf_token_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
         };
         (state, dir)
     }
