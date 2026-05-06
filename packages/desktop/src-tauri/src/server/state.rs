@@ -2,13 +2,88 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Button {
+#[derive(Debug, Deserialize)]
+pub struct LegacyButton {
     pub name: String,
     #[serde(rename = "type")]
     pub button_type: String,
     pub icon: String,
     pub action: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LegacyStreamDeckConfig {
+    pub grid: Grid,
+    #[serde(default)]
+    pub buttons: Vec<LegacyButton>,
+}
+
+const SYSTEM_MEDIA_ACTIONS: &[&str] = &[
+    "volume-up", "volume-down", "volume-mute",
+    "brightness-up", "brightness-down",
+    "sleep", "lock",
+];
+
+pub fn migrate_button(
+    legacy: &LegacyButton,
+    existing_contexts: &mut std::collections::HashSet<String>,
+) -> Button {
+    let (action_uuid, settings) = match legacy.button_type.as_str() {
+        "browser" => (
+            "com.pannacotta.browser.open-url".to_string(),
+            serde_json::json!({"url": legacy.action}),
+        ),
+        "system" if SYSTEM_MEDIA_ACTIONS.contains(&legacy.action.as_str()) => (
+            format!("com.pannacotta.system.{}", legacy.action),
+            serde_json::json!({}),
+        ),
+        "system" => (
+            "com.pannacotta.system.open-app".to_string(),
+            serde_json::json!({"appName": legacy.action}),
+        ),
+        other => (
+            format!("com.pannacotta.unknown.{}", other),
+            serde_json::json!({"action": legacy.action}),
+        ),
+    };
+    Button {
+        name: legacy.name.clone(),
+        icon: legacy.icon.clone(),
+        action_uuid,
+        context: generate_unique_context(existing_contexts),
+        settings,
+        lan_allowed: None,
+    }
+}
+
+pub fn migrate_config_from_legacy(legacy: LegacyStreamDeckConfig) -> StreamDeckConfig {
+    let mut seen = std::collections::HashSet::new();
+    StreamDeckConfig {
+        grid: legacy.grid,
+        buttons: legacy.buttons.iter().map(|b| migrate_button(b, &mut seen)).collect(),
+    }
+}
+
+fn generate_unique_context(existing: &mut std::collections::HashSet<String>) -> String {
+    loop {
+        let id = nanoid::nanoid!(12);
+        if existing.insert(id.clone()) {
+            return id;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Button {
+    pub name: String,
+    pub icon: String,
+    #[serde(rename = "actionUUID")]
+    pub action_uuid: String,
+    pub context: String,
+    #[serde(default)]
+    pub settings: serde_json::Value,
+    #[serde(default, rename = "lanAllowed")]
+    pub lan_allowed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,15 +165,19 @@ pub fn default_config() -> StreamDeckConfig {
         buttons: vec![
             Button {
                 name: "Calculator".into(),
-                button_type: "system".into(),
                 icon: "calculator".into(),
-                action: "Calculator".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "aB3dE5fG7hIj".into(),
+                settings: serde_json::json!({"appName": "Calculator"}),
+                lan_allowed: None,
             },
             Button {
                 name: "Google".into(),
-                button_type: "browser".into(),
                 icon: "chrome".into(),
-                action: "https://google.com".into(),
+                action_uuid: "com.pannacotta.browser.open-url".into(),
+                context: "kL9mN1oP2qRs".into(),
+                settings: serde_json::json!({"url": "https://google.com"}),
+                lan_allowed: None,
             },
         ],
     }
@@ -280,6 +359,81 @@ pub async fn save_stream_deck_config(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn button_serde_json_roundtrip() {
+        let b = Button {
+            name: "Test".into(),
+            icon: "test".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "abc123xyz456".into(),
+            settings: serde_json::json!({"appName": "Calculator"}),
+            lan_allowed: None,
+        };
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(json.contains("\"actionUUID\""));
+        assert!(json.contains("\"lanAllowed\""));
+        let back: Button = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.action_uuid, "com.pannacotta.system.open-app");
+        assert_eq!(back.context, "abc123xyz456");
+        assert!(back.lan_allowed.is_none());
+    }
+
+    #[test]
+    fn migrate_browser_button() {
+        let legacy = LegacyButton {
+            name: "Google".into(),
+            button_type: "browser".into(),
+            icon: "chrome".into(),
+            action: "https://google.com".into(),
+        };
+        let mut seen = std::collections::HashSet::new();
+        let b = migrate_button(&legacy, &mut seen);
+        assert_eq!(b.action_uuid, "com.pannacotta.browser.open-url");
+        assert_eq!(b.settings["url"], "https://google.com");
+    }
+
+    #[test]
+    fn migrate_system_media_button() {
+        let legacy = LegacyButton {
+            name: "Vol Up".into(),
+            button_type: "system".into(),
+            icon: "volume".into(),
+            action: "volume-up".into(),
+        };
+        let mut seen = std::collections::HashSet::new();
+        let b = migrate_button(&legacy, &mut seen);
+        assert_eq!(b.action_uuid, "com.pannacotta.system.volume-up");
+        assert_eq!(b.settings, serde_json::json!({}));
+    }
+
+    #[test]
+    fn migrate_system_app_button() {
+        let legacy = LegacyButton {
+            name: "Calculator".into(),
+            button_type: "system".into(),
+            icon: "calculator".into(),
+            action: "Calculator".into(),
+        };
+        let mut seen = std::collections::HashSet::new();
+        let b = migrate_button(&legacy, &mut seen);
+        assert_eq!(b.action_uuid, "com.pannacotta.system.open-app");
+        assert_eq!(b.settings["appName"], "Calculator");
+    }
+
+    #[test]
+    fn migrate_generates_unique_contexts() {
+        let legacy = LegacyStreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![
+                LegacyButton { name: "A".into(), button_type: "system".into(), icon: "x".into(), action: "Calculator".into() },
+                LegacyButton { name: "B".into(), button_type: "browser".into(), icon: "y".into(), action: "https://x.com".into() },
+            ],
+        };
+        let cfg = migrate_config_from_legacy(legacy);
+        assert_ne!(cfg.buttons[0].context, cfg.buttons[1].context);
+        assert_eq!(cfg.buttons[0].context.len(), 12);
+    }
 
     fn temp_state() -> (AppState, TempDir) {
         let dir = tempfile::tempdir().unwrap();
