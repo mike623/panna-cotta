@@ -47,6 +47,8 @@ pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
 
     *state.port.lock().map_err(|e| e.to_string())? = Some(port);
 
+    tracing::info!(port, "server bound");
+
     tauri::async_runtime::spawn(async move {
         axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.expect("axum server failed");
     });

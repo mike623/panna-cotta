@@ -360,8 +360,14 @@ async fn execute_handler(
             return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "not allowed from LAN"}))).into_response();
         }
         match dispatch_context(&button).await {
-            Ok(_) => Json(serde_json::json!({"success": true})).into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+            Ok(()) => {
+                tracing::info!(action = %button.action_uuid, context = %button.context, "button dispatch ok");
+                Json(serde_json::json!({"success": true})).into_response()
+            }
+            Err(e) => {
+                tracing::warn!(action = %button.action_uuid, context = %button.context, error = %e, "button dispatch failed");
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response()
+            }
         }
     } else if let (Some(action), Some(target)) = (body.action, body.target) {
         if !is_local {

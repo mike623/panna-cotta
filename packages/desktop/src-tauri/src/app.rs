@@ -154,7 +154,7 @@ pub fn run() {
                 match crate::server::start(state.clone()).await {
                     Ok(port) => update_tray_tooltip(&app_handle, Some(port), true),
                     Err(e) => {
-                        eprintln!("Server failed to start: {e}");
+                        tracing::error!(error = %e, "server failed to start");
                         update_tray_tooltip(&app_handle, None, false);
                     }
                 }
