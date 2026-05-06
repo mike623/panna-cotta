@@ -91,3 +91,27 @@ pub async fn open_config_folder(state: State<'_, Arc<AppState>>) -> Result<(), S
 pub fn get_csrf_token(state: State<'_, Arc<AppState>>) -> String {
     state.csrf_token.clone()
 }
+
+#[tauri::command]
+pub async fn open_log_folder(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let dir = state.config_dir.join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dir_str = dir.to_string_lossy().to_string();
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open")
+        .arg(&dir_str)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("explorer")
+        .arg(&dir_str)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open")
+        .arg(&dir_str)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    tracing::info!("opened log folder");
+    Ok(())
+}

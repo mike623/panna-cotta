@@ -47,26 +47,41 @@ pub async fn execute_command(action: String, target: String) -> Result<(), Strin
             .output(),
         _ => return Err(format!("Unknown action: {action}")),
     };
-    output.map(|_| ()).map_err(|e| e.to_string())
+    let result = output.map(|_| ()).map_err(|e| e.to_string());
+    match &result {
+        Ok(()) => tracing::info!(action = %action, target = %target, "execute ok"),
+        Err(e) => tracing::warn!(action = %action, target = %target, error = %e, "execute failed"),
+    }
+    result
 }
 
 #[tauri::command]
 pub async fn open_app(app_name: String) -> Result<(), String> {
-    Command::new("open")
+    let result = Command::new("open")
         .args(["-a", &app_name])
         .output()
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    match &result {
+        Ok(()) => tracing::info!(app = %app_name, "open-app ok"),
+        Err(e) => tracing::warn!(app = %app_name, error = %e, "open-app failed"),
+    }
+    result
 }
 
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     validate_url_scheme(&url)?;
-    Command::new("open")
+    let result = Command::new("open")
         .arg(&url)
         .output()
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    match &result {
+        Ok(()) => tracing::info!(url = %url, "open-url ok"),
+        Err(e) => tracing::warn!(url = %url, error = %e, "open-url failed"),
+    }
+    result
 }
 
 #[tauri::command]
@@ -76,6 +91,7 @@ pub fn get_app_version() -> String {
 
 #[tauri::command]
 pub async fn quit_app(app: AppHandle) {
+    tracing::info!("app quit");
     app.exit(0);
 }
 

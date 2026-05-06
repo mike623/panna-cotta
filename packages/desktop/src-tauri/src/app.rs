@@ -108,6 +108,7 @@ pub fn run() {
             crate::commands::config::delete_profile_cmd,
             crate::commands::config::open_config_folder,
             crate::commands::config::get_csrf_token,
+            crate::commands::config::open_log_folder,
             crate::commands::system::execute_command,
             crate::commands::system::open_app,
             crate::commands::system::open_url,
