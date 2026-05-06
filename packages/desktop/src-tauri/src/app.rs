@@ -84,7 +84,7 @@ pub fn run() {
 
     tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_writer(non_blocking))
+        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
         .init();
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "app starting");
