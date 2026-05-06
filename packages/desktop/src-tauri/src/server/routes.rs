@@ -201,10 +201,28 @@ fn local_ip() -> String {
 
 // ── Config handlers ───────────────────────────────────────────────────
 
-async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+async fn get_config(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let has_csrf = is_localhost_addr(&addr)
+        && headers
+            .get("X-Panna-CSRF")
+            .and_then(|v| v.to_str().ok())
+            .map(|t| csrf_eq(t, &state.csrf_token))
+            .unwrap_or(false);
+
     match use_stream_deck_config(&state).await {
-        Ok(cfg) => (StatusCode::OK, Json(json!(cfg))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
+        Ok(mut cfg) => {
+            if !has_csrf {
+                for button in &mut cfg.buttons {
+                    button.settings = serde_json::Value::Null;
+                }
+            }
+            (StatusCode::OK, Json(serde_json::json!(cfg))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
 
@@ -565,6 +583,64 @@ mod tests {
             .unwrap();
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn get_config_redacts_settings_without_csrf() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Secret".into(),
+            icon: "x".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "ctx123".into(),
+            settings: serde_json::json!({"appName": "Terminal", "secret": "data"}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("mytoken", buttons).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/config")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // settings should be stripped (null or absent)
+        let btn = &json["buttons"][0];
+        let settings = &btn["settings"];
+        assert!(settings.is_null() || settings == &serde_json::Value::Null,
+            "settings should be redacted, got: {btn}");
+        // Other fields still present
+        assert_eq!(btn["context"], "ctx123");
+        assert_eq!(btn["name"], "Secret");
+    }
+
+    #[tokio::test]
+    async fn get_config_includes_settings_with_csrf() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Secret".into(),
+            icon: "x".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "ctx456".into(),
+            settings: serde_json::json!({"appName": "Terminal"}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("mytoken", buttons).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/config")
+            .header("X-Panna-CSRF", "mytoken")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let btn = &json["buttons"][0];
+        assert_eq!(btn["settings"]["appName"], "Terminal");
     }
 }
 
