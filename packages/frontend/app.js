@@ -89,11 +89,12 @@ function flashButton(button, className) {
 async function handleButtonPress(button, buttonConfig) {
   button.classList.add("button-loading");
   try {
-    if (buttonConfig.type === "browser") {
-      await api.openUrl(buttonConfig.action);
-    } else if (buttonConfig.type === "system") {
-      await api.executeAction("open-app", buttonConfig.action);
-    }
+    const response = await fetch(`${api.baseUrl}/api/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: buttonConfig.context }),
+    });
+    if (!response.ok) throw new Error(`Execute failed: ${response.status}`);
     flashButton(button, "button-success");
   } catch (err) {
     console.error("Button action failed:", err);
@@ -319,18 +320,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  const toggleThemeButton = document.getElementById("toggle-theme");
-  const toggleViewButton = document.getElementById("toggle-view");
-  const prevPageButton = document.getElementById("prev-page");
-  const nextPageButton = document.getElementById("next-page");
-  const collapseToolbarButton = document.getElementById("collapse-toolbar");
-  const expandToolbarButton = document.getElementById("expand-toolbar");
-  const mainToolbar = document.getElementById("main-toolbar");
-
-  // Set icon data-lucide attrs BEFORE renderView calls lucide.createIcons
-  toggleThemeButton.querySelector("i").setAttribute("data-lucide", savedTheme === "dark" ? "sun" : "moon");
-  toggleViewButton.querySelector("i").setAttribute("data-lucide", viewMode === "grid" ? "list" : "layout-grid");
-
   renderView();
   startHealthPing();
 
@@ -342,35 +331,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       closeBtn.addEventListener("click", () => window.close());
     }
   }
-
-  function setButtonIcon(button, iconName) {
-    const existing = button.querySelector("svg[data-lucide], i[data-lucide]");
-    if (existing) {
-      const i = document.createElement("i");
-      i.setAttribute("data-lucide", iconName);
-      existing.replaceWith(i);
-      lucide.createIcons();
-    }
-  }
-
-  toggleViewButton.addEventListener("click", () => {
-    viewMode = viewMode === "grid" ? "list" : "grid";
-    localStorage.setItem("viewMode", viewMode);
-    setButtonIcon(toggleViewButton, viewMode === "grid" ? "list" : "layout-grid");
-    currentPage = 0;
-    renderView();
-  });
-
-  toggleThemeButton.addEventListener("click", () => {
-    document.body.classList.toggle("dark-mode");
-    document.body.classList.toggle("light-mode");
-    const isDarkMode = document.body.classList.contains("dark-mode");
-    localStorage.setItem("theme", isDarkMode ? "dark" : "light");
-    setButtonIcon(toggleThemeButton, isDarkMode ? "sun" : "moon");
-  });
-
-  prevPageButton.addEventListener("click", () => navigatePage("prev"));
-  nextPageButton.addEventListener("click", () => navigatePage("next"));
 
   let swipeStartX = 0;
   let swipeStartY = 0;
@@ -479,20 +439,4 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }, { passive: true });
 
-  function setDotsVisibility(visible) {
-    const dots = document.getElementById("page-dots");
-    if (dots) dots.style.visibility = visible ? "visible" : "hidden";
-  }
-
-  collapseToolbarButton.addEventListener("click", () => {
-    mainToolbar.classList.add("hidden");
-    expandToolbarButton.classList.remove("hidden");
-    setDotsVisibility(true);
-  });
-
-  expandToolbarButton.addEventListener("click", () => {
-    mainToolbar.classList.remove("hidden");
-    expandToolbarButton.classList.add("hidden");
-    setDotsVisibility(false);
-  });
 });
