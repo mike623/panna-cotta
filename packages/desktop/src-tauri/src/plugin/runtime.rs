@@ -25,12 +25,12 @@ pub async fn resolve_node_binary(config_dir: &Path) -> Result<PathBuf, String> {
 
 /// Returns true if the binary at `path` reports Node.js version >= 20.
 pub async fn check_node_version(path: &Path) -> bool {
-    let output = Command::new(path)
-        .arg("--version")
-        .output()
-        .await;
-    match output {
-        Ok(o) if o.status.success() => {
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        Command::new(path).arg("--version").output(),
+    ).await;
+    match result {
+        Ok(Ok(o)) if o.status.success() => {
             let ver = String::from_utf8_lossy(&o.stdout);
             let major: u32 = ver.trim()
                 .trim_start_matches('v')
@@ -40,7 +40,12 @@ pub async fn check_node_version(path: &Path) -> bool {
                 .unwrap_or(0);
             major >= 20
         }
-        _ => false,
+        Ok(Ok(_)) => false,
+        Ok(Err(_)) => false,
+        Err(_elapsed) => {
+            tracing::warn!(path=%path.display(), "node --version timed out after 5s");
+            false
+        }
     }
 }
 

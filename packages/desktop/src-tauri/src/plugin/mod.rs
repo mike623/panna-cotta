@@ -116,8 +116,8 @@ impl PluginHost {
     pub async fn spawn_plugin(
         &mut self,
         uuid: &str,
-        node_binary: &str,
-        code_path: &str,
+        node_binary: &std::path::Path,
+        code_path: &std::path::Path,
         port: u16,
     ) -> Result<(), String> {
         let info = serde_json::json!({
@@ -298,8 +298,8 @@ mod tests {
     #[tokio::test]
     async fn spawn_plugin_adds_to_pending() {
         let mut host = PluginHost::new(default_config());
-        #[cfg(unix)] let (bin, code) = ("/bin/sh", "-c exit 0");
-        #[cfg(windows)] let (bin, code) = ("cmd.exe", "/C exit 0");
+        #[cfg(unix)] let (bin, code) = (std::path::Path::new("/bin/sh"), std::path::Path::new("-c exit 0"));
+        #[cfg(windows)] let (bin, code) = (std::path::Path::new("cmd.exe"), std::path::Path::new("/C exit 0"));
         host.spawn_plugin("com.test.p", bin, code, 30000).await.unwrap();
         assert!(host.pending_registrations.contains_key("com.test.p"));
         assert!(host.plugins.contains_key("com.test.p"));
