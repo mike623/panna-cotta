@@ -27,7 +27,8 @@ pub async fn scan_plugins(config_dir: &Path) -> Vec<DiscoveredPlugin> {
         let mut dirs: Vec<PathBuf> = Vec::new();
         while let Ok(Some(e)) = entries.next_entry().await {
             let p = e.path();
-            if p.extension().and_then(|e| e.to_str()) == Some("sdPlugin") && p.is_dir() {
+            let is_dir = e.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
+            if p.extension().and_then(|ext| ext.to_str()) == Some("sdPlugin") && is_dir {
                 dirs.push(p);
             }
         }
@@ -39,10 +40,11 @@ pub async fn scan_plugins(config_dir: &Path) -> Vec<DiscoveredPlugin> {
                 match found.entry(uuid) {
                     Entry::Vacant(e) => { e.insert(plugin); }
                     Entry::Occupied(mut e) => {
+                        // Dropin beats Npm; Npm source is not yet scanned (Plan 3) but the rule is enforced here
                         if plugin.source == PluginSource::Dropin && e.get().source == PluginSource::Npm {
                             e.insert(plugin);
                         }
-                        // same source: dirs sorted alphabetically, first inserted wins
+                        // same source: dirs sorted alphabetically, first inserted wins (no update needed)
                     }
                 }
             }
@@ -118,7 +120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duplicate_uuid_dropin_wins_alphabetically() {
+    async fn duplicate_uuid_alphabetically_first_wins() {
         let tmp = TempDir::new().unwrap();
         let base = tmp.path().join("plugins");
         let dir_a = base.join("aaa.sdPlugin");
