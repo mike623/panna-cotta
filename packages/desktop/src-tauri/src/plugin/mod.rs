@@ -1,5 +1,8 @@
 pub mod ws;
 
+#[cfg(unix)]
+extern crate libc;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
@@ -105,6 +108,128 @@ impl PluginHost {
     }
 }
 
+impl PluginHost {
+    /// Spawn a Node.js plugin process.
+    pub async fn spawn_plugin(
+        &mut self,
+        uuid: &str,
+        node_binary: &str,
+        code_path: &str,
+        port: u16,
+    ) -> Result<(), String> {
+        let info = serde_json::json!({
+            "application": {"version": "0.x.x"},
+            "devices": [{"id": "main", "type": 0, "size": {"columns": 5, "rows": 3}}]
+        }).to_string();
+
+        let mut cmd = tokio::process::Command::new(node_binary);
+        cmd.arg(code_path)
+           .arg("-port").arg(port.to_string())
+           .arg("-pluginUUID").arg(uuid)
+           .arg("-registerEvent").arg("registerPlugin")
+           .arg("-info").arg(&info);
+
+        #[cfg(unix)]
+        {
+            #[allow(unused_imports)]
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+
+        let child = cmd.spawn().map_err(|e| format!("spawn {uuid}: {e}"))?;
+
+        #[cfg(unix)]
+        let pgid = child.id();
+        #[cfg(not(unix))]
+        let pgid: Option<u32> = None;
+
+        let mut ps = PluginState::new();
+        ps.process = Some(child);
+        #[cfg(unix)] { ps.process_group_id = pgid; }
+
+        self.plugins.insert(uuid.to_string(), ps);
+        self.pending_registrations.insert(uuid.to_string(), Instant::now());
+        tracing::info!(uuid=%uuid, "plugin spawned");
+        Ok(())
+    }
+
+    /// Record a crash; returns true if the plugin should be restarted.
+    pub fn record_crash(&mut self, uuid: &str) -> bool {
+        let ps = match self.plugins.get_mut(uuid) {
+            Some(s) => s,
+            None => return false,
+        };
+        if matches!(ps.status, PluginStatus::Errored(_)) {
+            return false;
+        }
+        let now = Instant::now();
+        if now.duration_since(ps.last_crash_window_start) > CRASH_WINDOW {
+            ps.crash_count = 0;
+            ps.last_crash_window_start = now;
+        }
+        ps.crash_count += 1;
+        if ps.crash_count >= MAX_CRASHES {
+            ps.status = PluginStatus::Errored(
+                format!("{MAX_CRASHES} crashes in {CRASH_WINDOW:?}")
+            );
+            tracing::error!(uuid=%uuid, "plugin errored: crash limit");
+            false
+        } else {
+            ps.status = PluginStatus::Starting;
+            tracing::warn!(uuid=%uuid, crashes=ps.crash_count, "plugin crashed");
+            true
+        }
+    }
+
+    /// Stop a plugin: cancel restart handle, kill process.
+    pub async fn stop_plugin(&mut self, uuid: &str) {
+        if let Some(ps) = self.plugins.get_mut(uuid) {
+            if let Some(h) = ps.restart_handle.take() { h.abort(); }
+            ps.status = PluginStatus::Stopped;
+            ps.sender = None;
+            let child = ps.process.take();
+            let pgid = ps.process_group_id;
+            let _ = ps; // end mutable borrow before await
+            kill_process(child, pgid).await;
+        }
+        tracing::info!(uuid=%uuid, "plugin stopped");
+    }
+
+    /// Graceful shutdown: fire willDisappear for all buttons, then stop all plugins.
+    pub async fn shutdown(&mut self, cols: u32) {
+        let buttons: Vec<(String, String, serde_json::Value, usize)> = {
+            let ps = self.profile_state.lock().await;
+            ps.buttons.iter().enumerate()
+                .map(|(i, b)| (b.action_uuid.clone(), b.context.clone(), b.settings.clone(), i))
+                .collect()
+        };
+        for (uuid, ctx, settings, idx) in &buttons {
+            if let Some(plugin_uuid) = self.registry.get(uuid.as_str()).cloned() {
+                let msg = crate::events::outbound::will_disappear(uuid, ctx, settings, *idx, cols);
+                self.try_send(&plugin_uuid, msg);
+            }
+        }
+        let uuids: Vec<String> = self.plugins.keys().cloned().collect();
+        for uuid in &uuids {
+            self.stop_plugin(uuid).await;
+        }
+        tracing::info!("plugin host shutdown complete");
+    }
+}
+
+async fn kill_process(child: Option<Child>, pgid: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(g) = pgid {
+        unsafe { libc::killpg(g as libc::pid_t, libc::SIGTERM); }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        unsafe { libc::killpg(g as libc::pid_t, libc::SIGKILL); }
+    }
+    if let Some(mut c) = child {
+        let _ = c.kill().await;
+        let _ = c.wait().await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +270,36 @@ mod tests {
             host.queue_pre_reg("p1", serde_json::json!({}));
         }
         assert_eq!(host.plugins["p1"].pre_reg_queue.len(), PRE_REG_QUEUE_LIMIT);
+    }
+
+    #[test]
+    fn crash_recovery_increments_count() {
+        let mut host = PluginHost::new(default_config());
+        host.plugins.insert("p".into(), PluginState::new());
+        assert!(host.record_crash("p"));
+        assert_eq!(host.plugins["p"].crash_count, 1);
+        assert_eq!(host.plugins["p"].status, PluginStatus::Starting);
+    }
+
+    #[test]
+    fn crash_recovery_errors_at_limit() {
+        let mut host = PluginHost::new(default_config());
+        host.plugins.insert("p".into(), PluginState::new());
+        for _ in 0..MAX_CRASHES {
+            host.record_crash("p");
+        }
+        assert!(matches!(host.plugins["p"].status, PluginStatus::Errored(_)));
+        assert!(!host.record_crash("p"));
+    }
+
+    #[tokio::test]
+    async fn spawn_plugin_adds_to_pending() {
+        let mut host = PluginHost::new(default_config());
+        #[cfg(unix)] let (bin, code) = ("/bin/sh", "-c exit 0");
+        #[cfg(windows)] let (bin, code) = ("cmd.exe", "/C exit 0");
+        host.spawn_plugin("com.test.p", bin, code, 30000).await.unwrap();
+        assert!(host.pending_registrations.contains_key("com.test.p"));
+        assert!(host.plugins.contains_key("com.test.p"));
+        assert_eq!(host.plugins["com.test.p"].status, PluginStatus::Starting);
     }
 }
