@@ -23,29 +23,46 @@ pub async fn scan_plugins(config_dir: &Path) -> Vec<DiscoveredPlugin> {
     let mut found: HashMap<String, DiscoveredPlugin> = HashMap::new();
     let plugins_dir = config_dir.join("plugins");
 
-    if let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await {
-        let mut dirs: Vec<PathBuf> = Vec::new();
-        while let Ok(Some(e)) = entries.next_entry().await {
-            let p = e.path();
-            let is_dir = e.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
-            if p.extension().and_then(|ext| ext.to_str()) == Some("sdPlugin") && is_dir {
-                dirs.push(p);
+    let mut entries = match tokio::fs::read_dir(&plugins_dir).await {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return vec![],
+        Err(e) => {
+            tracing::warn!(dir=%plugins_dir.display(), error=%e, "failed to open plugins directory");
+            return vec![];
+        }
+    };
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    loop {
+        match entries.next_entry().await {
+            Ok(Some(e)) => {
+                let p = e.path();
+                let is_dir = e.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
+                if p.extension().and_then(|ext| ext.to_str()) == Some("sdPlugin") && is_dir {
+                    dirs.push(p);
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                tracing::warn!(dir=%plugins_dir.display(), error=%e, "error reading plugin dir entry, scan may be incomplete");
+                break;
             }
         }
-        dirs.sort();
+    }
+    dirs.sort();
 
-        for dir in dirs {
-            if let Some(plugin) = load_plugin(&dir, PluginSource::Dropin).await {
-                let uuid = plugin.manifest.uuid.clone();
-                match found.entry(uuid) {
-                    Entry::Vacant(e) => { e.insert(plugin); }
-                    Entry::Occupied(mut e) => {
-                        // Dropin beats Npm; Npm source is not yet scanned (Plan 3) but the rule is enforced here
-                        if plugin.source == PluginSource::Dropin && e.get().source == PluginSource::Npm {
-                            e.insert(plugin);
-                        }
-                        // same source: dirs sorted alphabetically, first inserted wins (no update needed)
+    for dir in dirs {
+        if let Some(plugin) = load_plugin(&dir, PluginSource::Dropin).await {
+            let uuid = plugin.manifest.uuid.clone();
+            debug_assert_eq!(plugin.source, PluginSource::Dropin, "Npm source scanning not yet implemented; update dedup logic when adding Npm");
+            match found.entry(uuid) {
+                Entry::Vacant(e) => { e.insert(plugin); }
+                Entry::Occupied(mut e) => {
+                    // Dropin beats Npm; Npm source is not yet scanned (Plan 3) but the rule is enforced here
+                    if plugin.source == PluginSource::Dropin && e.get().source == PluginSource::Npm {
+                        e.insert(plugin);
                     }
+                    // same source: dirs sorted alphabetically, first inserted wins (no update needed)
                 }
             }
         }
