@@ -3,6 +3,7 @@ export interface SlotData {
   label: string
   value: string
   iconOverride?: string
+  context?: string
 }
 
 export interface PageData {

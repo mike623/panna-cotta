@@ -12,67 +12,16 @@ import { makeTheme, DEFAULT_TWEAKS } from './theme'
 import type { Tweaks } from './theme'
 import { findAction, makeInitialProfiles } from './data'
 import type { ProfileData, SlotData } from './data'
+import { backendToProfile, profileToBackend } from './bridge'
+import type { BackendConfig, BackendProfile } from './bridge'
 import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
 import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
 import { Icon } from './icons'
 
 // ── Tauri bridge types ───────────────────────────────────────────────────────
-interface BackendButton {
-  name: string
-  type: string
-  icon: string
-  action: string
-}
-interface BackendConfig {
-  grid: { rows: number; cols: number }
-  buttons: BackendButton[]
-}
-interface BackendProfile {
-  name: string
-  isActive: boolean
-}
 interface ServerInfo {
   ip: string
   port: number
-}
-
-// Convert backend config → design slots (positional dense array → sparse map)
-function backendToProfile(name: string, config: BackendConfig): ProfileData {
-  const total = config.grid.rows * config.grid.cols
-  const slots: Record<number, SlotData> = {}
-  config.buttons.forEach((btn, idx) => {
-    if (idx < total && btn.type && btn.type !== '') {
-      slots[idx] = { actionId: btn.type, label: btn.name, value: btn.action, iconOverride: btn.icon || undefined }
-    }
-  })
-  return {
-    id: name, name,
-    icon: 'home',
-    rows: config.grid.rows,
-    cols: config.grid.cols,
-    pages: [{ id: 'p1', name: 'Home', slots }],
-  }
-}
-
-// Convert design profile → backend config (sparse map → positional dense array)
-function profileToBackend(profile: ProfileData, pageId?: string): BackendConfig {
-  const page = (pageId ? profile.pages.find(p => p.id === pageId) : null) || profile.pages[0]
-  const total = profile.rows * profile.cols
-  const buttons: BackendButton[] = []
-  for (let i = 0; i < total; i++) {
-    const slot = page?.slots[i]
-    if (slot) {
-      buttons.push({
-        name: slot.label,
-        type: slot.actionId,
-        icon: slot.iconOverride || findAction(slot.actionId)?.icon || '',
-        action: slot.value,
-      })
-    } else {
-      buttons.push({ name: '', type: '', icon: '', action: '' })
-    }
-  }
-  return { grid: { rows: profile.rows, cols: profile.cols }, buttons }
 }
 
 // ── Stepper ──────────────────────────────────────────────────────────────────
@@ -163,6 +112,7 @@ export function PannaApp() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [activeDragData, setActiveDragData] = useState<Record<string, unknown> | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Derived
   const activeProfile = state.profiles.find(p => p.id === state.activeProfileId)!
@@ -343,6 +293,31 @@ export function PannaApp() {
     }))
   }
 
+  const onImportProfile = () => fileInputRef.current?.click()
+
+  const onImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as ProfileData
+      if (!parsed.name || !Array.isArray(parsed.pages)) { alert('Invalid profile file'); return }
+      const name = parsed.name
+      try { await invoke('create_profile_cmd', { name }) } catch { /* offline / already exists */ }
+      try { await invoke('activate_profile_cmd', { name }) } catch { /* offline */ }
+      commit(cur => ({
+        ...cur,
+        profiles: [...cur.profiles.filter(p => p.id !== name), { ...parsed, id: name, name }],
+        activeProfileId: name,
+        activePageId: parsed.pages[0]?.id || 'p1',
+      }))
+      setSelectedSlot(null); setRightView('palette')
+    } catch (err) {
+      alert('Failed to import profile: ' + err)
+    }
+  }
+
   const onReset = async () => {
     if (!confirm('Reset active profile to defaults?')) return
     try { await invoke('save_config', { config: { grid: { rows: 3, cols: 3 }, buttons: [] } }) } catch { /* offline */ }
@@ -494,6 +469,7 @@ export function PannaApp() {
           activePageId={state.activePageId}
           onProfile={onProfile} onPage={onPage}
           onAddProfile={onAddProfile} onAddPage={onAddPage}
+          onImportProfile={onImportProfile}
           theme={theme}
         />
 
@@ -611,6 +587,7 @@ export function PannaApp() {
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} theme={theme} onAction={onCmd} />
       <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} lanUrl={lanUrl} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} theme={theme} />
+      <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={onImportFileChange} />
     </div>
   )
 }

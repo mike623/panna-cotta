@@ -309,10 +309,11 @@ interface ProfilesRailProps {
   onPage: (id: string) => void
   onAddProfile: () => void
   onAddPage: () => void
+  onImportProfile: () => void
   theme: Theme
 }
 
-export function ProfilesRail({ profiles, activeProfileId, activePageId, onProfile, onPage, onAddProfile, onAddPage, theme }: ProfilesRailProps) {
+export function ProfilesRail({ profiles, activeProfileId, activePageId, onProfile, onPage, onAddProfile, onAddPage, onImportProfile, theme }: ProfilesRailProps) {
   const active = profiles.find(p => p.id === activeProfileId)
   return (
     <Glass theme={theme} radius={theme.radiusLg} style={{
@@ -394,6 +395,23 @@ export function ProfilesRail({ profiles, activeProfileId, activePageId, onProfil
             <Icon name="plus" size={12} strokeWidth={1.7} />
           </div>
           New profile
+        </button>
+        <button onClick={onImportProfile} style={{
+          all: 'unset', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '7px 9px', borderRadius: 9,
+          color: theme.textFaint, fontSize: 12,
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.025)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 7,
+            border: `1px dashed ${theme.borderStrong}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Icon name="folder" size={12} strokeWidth={1.7} />
+          </div>
+          Import file
         </button>
       </div>
 
