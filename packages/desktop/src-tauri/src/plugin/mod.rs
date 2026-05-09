@@ -54,6 +54,12 @@ impl PluginState {
     }
 }
 
+impl Default for PluginState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct PluginHost {
     pub registry: HashMap<String, String>,         // actionUUID → pluginUUID
     pub plugins: HashMap<String, PluginState>,
