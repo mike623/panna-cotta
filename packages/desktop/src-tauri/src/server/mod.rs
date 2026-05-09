@@ -39,6 +39,8 @@ pub async fn resolve_port() -> Result<u16, String> {
 }
 
 pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
+    state.initialize().await?;
+
     let port = resolve_port().await?;
     let router = routes::create_router(state.clone());
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
@@ -53,6 +55,7 @@ pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
         axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.expect("axum server failed");
     });
 
+    tracing::info!("plugin runtime ready");
     Ok(port)
 }
 
