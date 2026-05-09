@@ -1,4 +1,5 @@
 pub mod ws;
+pub mod manifest;
 
 #[cfg(unix)]
 extern crate libc;
