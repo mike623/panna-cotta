@@ -133,6 +133,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/apps/", get(serve_apps_index))
         .route("/apps/*path", get(serve_apps_file))
         .route("/api/health", get(|| async { "OK" }))
+        .route("/ws", get(crate::plugin::ws::ws_upgrade))
         .route("/api/config", get(get_config))
         .route("/api/config/default", get(get_default_config_handler))
         .route("/api/profiles", get(list_profiles_handler))
@@ -359,7 +360,28 @@ async fn execute_handler(
         if button.lan_allowed == Some(false) && !is_local {
             return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "not allowed from LAN"}))).into_response();
         }
-        match dispatch_context(&button).await {
+        let plugin_dispatched = {
+            let host = state.plugin_host.lock().await;
+            if let Some(plugin_uuid) = host.plugin_for_action(&button.action_uuid).map(|s| s.to_string()) {
+                let (index, cols) = {
+                    let ps = host.profile_state.lock().await;
+                    let idx = ps.buttons.iter().position(|b| b.context == button.context).unwrap_or(0);
+                    (idx, ps.grid.cols)
+                };
+                let msg = crate::events::outbound::key_down_with_settings(
+                    &button.action_uuid, &button.context, &button.settings, index, cols,
+                );
+                host.try_send(&plugin_uuid, msg)
+            } else {
+                false
+            }
+        };
+        let result = if plugin_dispatched {
+            Ok(())
+        } else {
+            dispatch_context(&button).await
+        };
+        match result {
             Ok(()) => {
                 tracing::info!(action = %button.action_uuid, context = %button.context, "button dispatch ok");
                 Json(serde_json::json!({"success": true})).into_response()
@@ -647,6 +669,58 @@ mod tests {
             .unwrap();
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn ws_from_lan_returns_403() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn ws_bad_origin_returns_403() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Origin", "https://evil.com")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn ws_localhost_no_origin_accepted() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            // No Origin header = native process (plugin)
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        // oneshot doesn't establish a real WS connection (no hyper upgrade ext),
+        // so 101 isn't reachable; just verify auth passed (not blocked with 403)
+        assert_ne!(res.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
