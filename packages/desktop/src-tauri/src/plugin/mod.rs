@@ -202,6 +202,52 @@ impl PluginHost {
         tracing::info!(uuid=%uuid, "plugin stopped");
     }
 
+    /// On profile switch: fire willDisappear for old buttons, update profile_state,
+    /// fire willAppear for new buttons.
+    /// Call this while holding the PluginHost lock externally — this method takes &mut self.
+    pub async fn fire_profile_lifecycle(&mut self, new_cfg: crate::server::state::StreamDeckConfig) {
+        // 1. Get old buttons + grid from profile_state (acquire and release immediately)
+        let (old_buttons, cols) = {
+            let ps = self.profile_state.lock().await;
+            (ps.buttons.clone(), ps.grid.cols)
+        };
+
+        // 2. Fire willDisappear for old buttons whose contexts are NOT in new cfg
+        let new_contexts: std::collections::HashSet<&str> =
+            new_cfg.buttons.iter().map(|b| b.context.as_str()).collect();
+        for (idx, btn) in old_buttons.iter().enumerate() {
+            if !new_contexts.contains(btn.context.as_str()) {
+                if let Some(plugin_uuid) = self.registry.get(&btn.action_uuid).cloned() {
+                    let msg = crate::events::outbound::will_disappear(
+                        &btn.action_uuid, &btn.context, &btn.settings, idx, cols,
+                    );
+                    self.try_send(&plugin_uuid, msg);
+                }
+            }
+        }
+
+        // 3. Update profile_state
+        let new_cols = new_cfg.grid.cols;
+        {
+            let mut ps = self.profile_state.lock().await;
+            *ps = new_cfg.clone();
+        }
+
+        // 4. Fire willAppear for new buttons whose contexts were NOT in old cfg
+        let old_contexts: std::collections::HashSet<&str> =
+            old_buttons.iter().map(|b| b.context.as_str()).collect();
+        for (idx, btn) in new_cfg.buttons.iter().enumerate() {
+            if !old_contexts.contains(btn.context.as_str()) {
+                if let Some(plugin_uuid) = self.registry.get(&btn.action_uuid).cloned() {
+                    let msg = crate::events::outbound::will_appear(
+                        &btn.action_uuid, &btn.context, &btn.settings, idx, new_cols,
+                    );
+                    self.try_send(&plugin_uuid, msg);
+                }
+            }
+        }
+    }
+
     /// Graceful shutdown: fire willDisappear for all buttons, then stop all plugins.
     pub async fn shutdown(&mut self, cols: u32) {
         let buttons: Vec<(String, String, serde_json::Value, usize)> = {
@@ -240,7 +286,7 @@ async fn kill_process(child: Option<Child>, pgid: Option<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::state::default_config;
+    use crate::server::state::{Button, Grid, StreamDeckConfig, default_config};
 
     #[test]
     fn plugin_host_new_is_empty() {
@@ -315,5 +361,67 @@ mod tests {
         assert!(host.pending_registrations.contains_key("com.test.p"));
         assert!(host.plugins.contains_key("com.test.p"));
         assert_eq!(host.plugins["com.test.p"].status, PluginStatus::Starting);
+    }
+
+    #[tokio::test]
+    async fn switch_profile_fires_will_appear_for_new_buttons() {
+        let old_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![],
+        };
+        let new_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![Button {
+                name: "Calc".into(), icon: "c".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "ctx001".into(),
+                settings: serde_json::json!({"appName": "Calculator"}),
+                lan_allowed: None,
+            }],
+        };
+        let mut host = PluginHost::new(old_cfg);
+        host.registry.insert("com.pannacotta.system.open-app".into(), "com.pannacotta.system".into());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
+        let mut ps = PluginState::new();
+        ps.sender = Some(tx);
+        ps.status = PluginStatus::Running;
+        host.plugins.insert("com.pannacotta.system".into(), ps);
+
+        host.fire_profile_lifecycle(new_cfg).await;
+
+        let msg = rx.try_recv().expect("expected willAppear");
+        assert_eq!(msg["event"], "willAppear");
+        assert_eq!(msg["context"], "ctx001");
+    }
+
+    #[tokio::test]
+    async fn switch_profile_fires_will_disappear_for_old_buttons() {
+        let old_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![Button {
+                name: "Calc".into(), icon: "c".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "ctx001".into(),
+                settings: serde_json::json!({}),
+                lan_allowed: None,
+            }],
+        };
+        let new_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![],
+        };
+        let mut host = PluginHost::new(old_cfg);
+        host.registry.insert("com.pannacotta.system.open-app".into(), "com.pannacotta.system".into());
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
+        let mut ps = PluginState::new();
+        ps.sender = Some(tx);
+        ps.status = PluginStatus::Running;
+        host.plugins.insert("com.pannacotta.system".into(), ps);
+
+        host.fire_profile_lifecycle(new_cfg).await;
+
+        let msg = rx.try_recv().expect("expected willDisappear");
+        assert_eq!(msg["event"], "willDisappear");
+        assert_eq!(msg["context"], "ctx001");
     }
 }
