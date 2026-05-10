@@ -445,27 +445,48 @@ async fn open_config_folder_handler(State(state): State<Arc<AppState>>) -> impl 
 // ── Plugin handlers ───────────────────────────────────────────────────
 
 async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let host = state.plugin_host.lock().await;
-    let plugins: Vec<serde_json::Value> = host.manifests.iter().map(|(uuid, manifest)| {
-        let status = host.plugins.get(uuid)
-            .map(|ps| match &ps.status {
-                crate::plugin::PluginStatus::Running   => "running",
-                crate::plugin::PluginStatus::Starting  => "starting",
-                crate::plugin::PluginStatus::Stopped   => "stopped",
-                crate::plugin::PluginStatus::Errored(_) => "errored",
-            })
-            .unwrap_or("not_spawned");
+    struct PluginSnapshot {
+        uuid: String,
+        name: String,
+        version: String,
+        author: String,
+        description: String,
+        status: &'static str,
+        actions: Vec<(String, String)>, // (uuid, name)
+    }
+
+    let snapshots: Vec<PluginSnapshot> = {
+        let host = state.plugin_host.lock().await;
+        host.manifests.iter().map(|(uuid, manifest)| {
+            let status = host.plugins.get(uuid)
+                .map(|ps| match &ps.status {
+                    crate::plugin::PluginStatus::Running   => "running",
+                    crate::plugin::PluginStatus::Starting  => "starting",
+                    crate::plugin::PluginStatus::Stopped   => "stopped",
+                    crate::plugin::PluginStatus::Errored(_) => "errored",
+                })
+                .unwrap_or("not_spawned");
+            PluginSnapshot {
+                uuid: uuid.clone(),
+                name: manifest.name.clone(),
+                version: manifest.version.clone(),
+                author: manifest.author.clone(),
+                description: manifest.description.clone(),
+                status,
+                actions: manifest.actions.iter().map(|a| (a.uuid.clone(), a.name.clone())).collect(),
+            }
+        }).collect()
+    }; // guard dropped here
+
+    let plugins: Vec<serde_json::Value> = snapshots.into_iter().map(|s| {
         serde_json::json!({
-            "uuid": uuid,
-            "name": manifest.name,
-            "version": manifest.version,
-            "author": manifest.author,
-            "description": manifest.description,
-            "status": status,
-            "actions": manifest.actions.iter().map(|a| serde_json::json!({
-                "uuid": a.uuid,
-                "name": a.name,
-            })).collect::<Vec<_>>(),
+            "uuid": s.uuid,
+            "name": s.name,
+            "version": s.version,
+            "author": s.author,
+            "description": s.description,
+            "status": s.status,
+            "actions": s.actions.iter().map(|(u, n)| serde_json::json!({"uuid": u, "name": n})).collect::<Vec<_>>(),
         })
     }).collect();
     Json(serde_json::json!({ "plugins": plugins }))
@@ -483,29 +504,42 @@ async fn plugin_status_handler(
         .map(|t| csrf_eq(t, &state.csrf_token))
         .unwrap_or(false);
 
-    let host = state.plugin_host.lock().await;
-    if !host.manifests.contains_key(&uuid) {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plugin not found"}))).into_response();
+    // Collect data under lock, then drop before building response
+    struct StatusSnapshot {
+        status_str: String,
+        crash_count: u32,
+        unsupported_events: Vec<String>,
+        settings_not_persisted: bool,
     }
 
-    let ps = host.plugins.get(&uuid);
-    let status_str = ps.map(|p| match &p.status {
-        crate::plugin::PluginStatus::Running    => "running".to_string(),
-        crate::plugin::PluginStatus::Starting   => "starting".to_string(),
-        crate::plugin::PluginStatus::Stopped    => "stopped".to_string(),
-        crate::plugin::PluginStatus::Errored(_) => "errored".to_string(),
-    }).unwrap_or_else(|| "not_spawned".to_string());
+    let snapshot = {
+        let host = state.plugin_host.lock().await;
+        if !host.manifests.contains_key(&uuid) {
+            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plugin not found"}))).into_response();
+        }
+        let ps = host.plugins.get(&uuid);
+        let status_str = ps.map(|p| match &p.status {
+            crate::plugin::PluginStatus::Running    => "running".to_string(),
+            crate::plugin::PluginStatus::Starting   => "starting".to_string(),
+            crate::plugin::PluginStatus::Stopped    => "stopped".to_string(),
+            crate::plugin::PluginStatus::Errored(_) => "errored".to_string(),
+        }).unwrap_or_else(|| "not_spawned".to_string());
+        let mut unsupported: Vec<String> = ps.map(|p| p.unsupported_events.iter().cloned().collect()).unwrap_or_default();
+        unsupported.sort();
+        StatusSnapshot {
+            status_str,
+            crash_count: ps.map(|p| p.crash_count).unwrap_or(0),
+            unsupported_events: unsupported,
+            settings_not_persisted: ps.map(|p| p.settings_not_persisted).unwrap_or(false),
+        }
+    }; // guard dropped here
 
     let mut response = serde_json::json!({
         "uuid": &uuid,
-        "status": status_str,
-        "crashCount": ps.map(|p| p.crash_count).unwrap_or(0),
-        "unsupportedEvents": ps.map(|p| {
-            let mut v: Vec<String> = p.unsupported_events.iter().cloned().collect();
-            v.sort();
-            v
-        }).unwrap_or_default(),
-        "settingsNotPersisted": ps.map(|p| p.settings_not_persisted).unwrap_or(false),
+        "status": snapshot.status_str,
+        "crashCount": snapshot.crash_count,
+        "unsupportedEvents": snapshot.unsupported_events,
+        "settingsNotPersisted": snapshot.settings_not_persisted,
     });
 
     if has_csrf {
@@ -893,6 +927,55 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let btn = &json["buttons"][0];
         assert_eq!(btn["settings"]["appName"], "Terminal");
+    }
+
+    #[tokio::test]
+    async fn plugin_status_logtail_gated_by_csrf() {
+        let state = make_state("tok");
+        // Insert a known plugin manifest
+        {
+            let mut host = state.plugin_host.lock().await;
+            host.manifests.insert("com.test.plugin".into(), crate::plugin::manifest::Manifest {
+                uuid: "com.test.plugin".into(),
+                name: "Test".into(),
+                version: "1.0.0".into(),
+                author: "A".into(),
+                description: "d".into(),
+                sdk_version: 2,
+                code_path: "bin/plugin.js".into(),
+                os: vec![],
+                actions: vec![],
+            });
+        }
+
+        // Without CSRF: logTail should be absent
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.test.plugin/status")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("logTail").is_none(), "logTail should be absent without CSRF");
+
+        // With CSRF: logTail should be present (null)
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.test.plugin/status")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("logTail").is_some(), "logTail should be present with valid CSRF");
     }
 }
 
