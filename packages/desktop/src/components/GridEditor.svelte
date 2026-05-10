@@ -1,9 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  import type { StreamDeckConfig } from '../lib/types'
+  import type { StreamDeckConfig, PluginRenderState } from '../lib/types'
 
   export let config: StreamDeckConfig
   export let selectedIndex: number = -1
+  export let pluginRender: PluginRenderState = { images: {}, titles: {}, states: {} }
 
   const dispatch = createEventDispatcher<{ select: number }>()
 
@@ -41,8 +42,16 @@
       on:click={() => dispatch('select', i)}
     >
       {#if btn}
-        <span class="cell-icon">{iconEmoji(btn.icon)}</span>
-        <span class="cell-label">{btn.name}</span>
+        {#if pluginRender.images[btn.context]}
+          <img
+            src={pluginRender.images[btn.context]}
+            alt=""
+            class="cell-plugin-img"
+          />
+        {:else}
+          <span class="cell-icon">{iconEmoji(btn.icon)}</span>
+        {/if}
+        <span class="cell-label">{pluginRender.titles[btn.context] ?? btn.name}</span>
       {:else}
         <span class="cell-icon" style="opacity:0.4;font-size:1.1rem">+</span>
       {/if}
@@ -69,6 +78,7 @@
   .grid-cell.empty { opacity: 0.35; }
   .grid-cell.empty:hover { opacity: 0.6; }
   .cell-icon { font-size: 1.5rem; line-height: 1; }
+  .cell-plugin-img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
   .cell-label { font-size: 0.58rem; color: #ccc; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 66px; }
   .cell-idx { position: absolute; top: 3px; right: 4px; font-size: 0.5rem; color: #555; }
 </style>

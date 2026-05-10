@@ -5,14 +5,16 @@
   import GridEditor from './components/GridEditor.svelte'
   import ButtonEditor from './components/ButtonEditor.svelte'
   import ActionSidebar from './components/ActionSidebar.svelte'
-  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder, getServerInfo, listPlugins } from './lib/invoke'
-  import type { StreamDeckConfig, Profile, ServerInfo, PluginInfo } from './lib/types'
+  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder, getServerInfo, listPlugins, getPluginRender } from './lib/invoke'
+  import type { StreamDeckConfig, Profile, ServerInfo, PluginInfo, PluginRenderState } from './lib/types'
+  import { listen } from '@tauri-apps/api/event'
 
   let config: StreamDeckConfig | null = null
   let profiles: Profile[] = []
   let selectedIndex = -1
   let serverInfo: ServerInfo | null = null
   let plugins: PluginInfo[] = []
+  let pluginRender: PluginRenderState = { images: {}, titles: {}, states: {} }
   let toastMsg = ''
   let toastOk = true
   let toastVisible = false
@@ -26,11 +28,18 @@
   }
 
   async function reload() {
-    const [cfg, profs, info, plugs] = await Promise.all([getConfig(), listProfiles(), getServerInfo(), listPlugins().catch(() => [] as PluginInfo[])])
+    const [cfg, profs, info, plugs, render] = await Promise.all([
+      getConfig(),
+      listProfiles(),
+      getServerInfo(),
+      listPlugins().catch(() => [] as PluginInfo[]),
+      getPluginRender().catch(() => ({ images: {}, titles: {}, states: {} } as PluginRenderState)),
+    ])
     config = cfg
     profiles = profs
     serverInfo = info
     plugins = plugs
+    pluginRender = render
     selectedIndex = -1
   }
 
@@ -40,7 +49,25 @@
     showToast('Defaults loaded — click Save to apply', true)
   }
 
-  onMount(reload)
+  onMount(async () => {
+    await reload()
+
+    const unlistenRender = await listen('plugin-render-updated', async () => {
+      pluginRender = await getPluginRender().catch(() => pluginRender)
+    })
+    const unlistenInstall = await listen<{ ok: boolean; name?: string; error?: string }>(
+      'plugin-installed',
+      (event) => {
+        if (event.payload.ok) {
+          showToast(`Plugin "${event.payload.name}" installed`, true)
+          reload()
+        } else {
+          showToast(`Install failed: ${event.payload.error}`, false)
+        }
+      }
+    )
+    return () => { unlistenRender(); unlistenInstall() }
+  })
 </script>
 
 <div class="topbar">
@@ -61,6 +88,7 @@
       <GridEditor
         {config}
         {selectedIndex}
+        {pluginRender}
         on:select={e => { selectedIndex = e.detail }}
       />
       <div class="divider"></div>

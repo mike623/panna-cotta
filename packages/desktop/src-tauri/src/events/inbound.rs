@@ -6,6 +6,7 @@ const SUPPORTED: &[&str] = &[
     "setTitle", "setSettings", "getSettings",
     "showOk", "showAlert", "openUrl", "logMessage",
     "sendToPropertyInspector", "sendToPlugin",
+    "setImage", "setState", "setGlobalSettings", "getGlobalSettings",
 ];
 
 pub fn is_unsupported(event: &str) -> bool {
@@ -17,12 +18,16 @@ pub async fn dispatch(msg: serde_json::Value, plugin_uuid: &str, state: &Arc<App
     match event {
         "setSettings"             => on_set_settings(msg, plugin_uuid, state).await,
         "getSettings"             => on_get_settings(msg, plugin_uuid, state).await,
-        "setTitle"                => on_set_title(&msg, plugin_uuid),
+        "setTitle"                => on_set_title(&msg, plugin_uuid, state),
         "showOk"                  => on_show_ok(&msg, plugin_uuid),
         "showAlert"               => on_show_alert(&msg, plugin_uuid),
         "openUrl"                 => on_open_url(msg, plugin_uuid).await,
         "logMessage"              => on_log_message(&msg, plugin_uuid),
         "sendToPropertyInspector" => on_send_to_pi(&msg, plugin_uuid, state),
+        "setImage"                => on_set_image(&msg, plugin_uuid, state),
+        "setState"                => on_set_state(&msg, plugin_uuid, state),
+        "setGlobalSettings"       => on_set_global_settings(&msg, plugin_uuid, state).await,
+        "getGlobalSettings"       => on_get_global_settings(plugin_uuid, state).await,
         _ if is_unsupported(event) => record_unsupported(plugin_uuid, event, state).await,
         _ => {}
     }
@@ -93,10 +98,70 @@ async fn on_get_settings(msg: serde_json::Value, plugin_uuid: &str, state: &Arc<
     host.try_send(plugin_uuid, response);
 }
 
-fn on_set_title(msg: &serde_json::Value, plugin_uuid: &str) {
-    let ctx = msg.get("context").and_then(|v| v.as_str()).unwrap_or("?");
-    let title = msg["payload"]["title"].as_str().unwrap_or("");
-    tracing::info!(plugin=%plugin_uuid, ctx=%ctx, title=%title, "setTitle (UI not yet implemented)");
+fn emit_render_updated(state: &Arc<AppState>) {
+    use tauri::Emitter;
+    if let Ok(guard) = state.app_handle.lock() {
+        if let Some(handle) = guard.as_ref() {
+            let _ = handle.emit("plugin-render-updated", ());
+        }
+    }
+}
+
+fn on_set_image(msg: &serde_json::Value, plugin_uuid: &str, state: &Arc<AppState>) {
+    let context = match msg.get("context").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return,
+    };
+    let image = match msg["payload"]["image"].as_str() {
+        Some(i) => i.to_string(),
+        None => return,
+    };
+    if let Ok(mut render) = state.plugin_render.lock() {
+        render.images.insert(context, image);
+    }
+    emit_render_updated(state);
+    tracing::debug!(plugin=%plugin_uuid, "setImage stored");
+}
+
+fn on_set_title(msg: &serde_json::Value, plugin_uuid: &str, state: &Arc<AppState>) {
+    let context = match msg.get("context").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return,
+    };
+    let title = msg["payload"]["title"].as_str().unwrap_or("").to_string();
+    if let Ok(mut render) = state.plugin_render.lock() {
+        render.titles.insert(context, title);
+    }
+    emit_render_updated(state);
+    tracing::debug!(plugin=%plugin_uuid, "setTitle stored");
+}
+
+fn on_set_state(msg: &serde_json::Value, plugin_uuid: &str, state: &Arc<AppState>) {
+    let context = match msg.get("context").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return,
+    };
+    let state_val = msg["payload"]["state"].as_u64().unwrap_or(0) as u32;
+    if let Ok(mut render) = state.plugin_render.lock() {
+        render.states.insert(context, state_val);
+    }
+    tracing::debug!(plugin=%plugin_uuid, "setState stored");
+}
+
+async fn on_set_global_settings(msg: &serde_json::Value, plugin_uuid: &str, state: &Arc<AppState>) {
+    let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+    if let Err(e) = crate::commands::plugins::write_global_settings(&state.config_dir, plugin_uuid, &payload).await {
+        tracing::error!(plugin=%plugin_uuid, error=%e, "setGlobalSettings: write failed");
+    } else {
+        tracing::info!(plugin=%plugin_uuid, "setGlobalSettings persisted");
+    }
+}
+
+async fn on_get_global_settings(plugin_uuid: &str, state: &Arc<AppState>) {
+    let settings = crate::commands::plugins::read_global_settings(&state.config_dir, plugin_uuid).await;
+    let outbound_msg = crate::events::outbound::did_receive_global_settings(plugin_uuid, &settings);
+    let host = state.plugin_host.lock().await;
+    host.try_send(plugin_uuid, outbound_msg);
 }
 
 fn on_show_ok(msg: &serde_json::Value, plugin_uuid: &str) {
@@ -167,14 +232,20 @@ mod tests {
 
     fn test_state(buttons: Vec<Button>) -> Arc<AppState> {
         let config = StreamDeckConfig { grid: Grid { rows: 2, cols: 3 }, buttons };
-        let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(config),
+        let plugin_render = Arc::new(std::sync::Mutex::new(
+            crate::server::state::PluginRenderState::default()
         ));
+        let plugin_host = Arc::new(tokio::sync::Mutex::new(
+            crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
+        ));
+        let dir = tempfile::tempdir().unwrap().keep();
         Arc::new(AppState {
-            config_dir: "/tmp/test-inbound".into(),
+            config_dir: dir,
             port: std::sync::Mutex::new(None),
             csrf_token: "test".into(),
             plugin_host,
+            plugin_render,
+            app_handle: std::sync::Mutex::new(None),
         })
     }
 
@@ -217,9 +288,10 @@ mod tests {
         assert!(!is_unsupported("showAlert"));
         assert!(!is_unsupported("sendToPropertyInspector"));
         assert!(!is_unsupported("registerPlugin"));
-        assert!(is_unsupported("setImage"));
-        assert!(is_unsupported("setState"));
-        assert!(is_unsupported("setGlobalSettings"));
+        assert!(!is_unsupported("setImage"));
+        assert!(!is_unsupported("setState"));
+        assert!(!is_unsupported("setGlobalSettings"));
+        assert!(!is_unsupported("getGlobalSettings"));
         assert!(is_unsupported("unknownFoo"));
     }
 
@@ -233,5 +305,70 @@ mod tests {
             "payload": {"key": "value"}
         }), "com.test.plugin", &state).await;
         // No panic = pass
+    }
+
+    #[tokio::test]
+    async fn set_image_stores_in_render_state() {
+        let state = test_state(vec![]);
+        dispatch(serde_json::json!({
+            "event": "setImage",
+            "context": "ctx001",
+            "payload": { "image": "data:image/png;base64,abc=", "target": 0, "state": 0 }
+        }), "com.spotify.sdPlugin", &state).await;
+        let render = state.plugin_render.lock().unwrap();
+        assert_eq!(render.images.get("ctx001").map(|s| s.as_str()), Some("data:image/png;base64,abc="));
+    }
+
+    #[tokio::test]
+    async fn set_title_stores_in_render_state() {
+        let state = test_state(vec![]);
+        dispatch(serde_json::json!({
+            "event": "setTitle",
+            "context": "ctx001",
+            "payload": { "title": "Bohemian Rhapsody", "target": 0 }
+        }), "com.spotify.sdPlugin", &state).await;
+        let render = state.plugin_render.lock().unwrap();
+        assert_eq!(render.titles.get("ctx001").map(|s| s.as_str()), Some("Bohemian Rhapsody"));
+    }
+
+    #[tokio::test]
+    async fn set_state_stores_in_render_state() {
+        let state = test_state(vec![]);
+        dispatch(serde_json::json!({
+            "event": "setState",
+            "context": "ctx001",
+            "payload": { "state": 1 }
+        }), "com.spotify.sdPlugin", &state).await;
+        let render = state.plugin_render.lock().unwrap();
+        assert_eq!(render.states.get("ctx001"), Some(&1u32));
+    }
+
+    #[tokio::test]
+    async fn set_global_settings_persists_to_disk() {
+        let state = test_state(vec![]);
+        dispatch(serde_json::json!({
+            "event": "setGlobalSettings",
+            "payload": { "token": "secret123" }
+        }), "com.spotify.sdPlugin", &state).await;
+        let path = state.config_dir.join("globals").join("com.spotify.sdPlugin.json");
+        let raw = tokio::fs::read_to_string(&path).await.unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["token"], "secret123");
+    }
+
+    #[tokio::test]
+    async fn get_global_settings_does_not_panic() {
+        let state = test_state(vec![]);
+        let globals_dir = state.config_dir.join("globals");
+        tokio::fs::create_dir_all(&globals_dir).await.unwrap();
+        tokio::fs::write(
+            globals_dir.join("com.spotify.sdPlugin.json"),
+            r#"{"token":"xyz"}"#,
+        ).await.unwrap();
+        // Should not panic even with no registered plugin to send back to
+        dispatch(serde_json::json!({
+            "event": "getGlobalSettings",
+            "context": "com.spotify.sdPlugin"
+        }), "com.spotify.sdPlugin", &state).await;
     }
 }

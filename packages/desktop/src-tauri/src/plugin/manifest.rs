@@ -85,8 +85,8 @@ pub fn validate_with_platform(manifest: &Manifest, _plugin_dir: &Path, platform:
             }
         }
     }
-    if manifest.sdk_version > 2 {
-        return Err(format!("SDKVersion {} > 2 is not supported", manifest.sdk_version));
+    if manifest.sdk_version > 6 {
+        return Err(format!("SDKVersion {} > 6 is not supported", manifest.sdk_version));
     }
     if !manifest.os.is_empty() {
         let compat = manifest.os.iter().any(|e| e.platform.to_lowercase() == platform);
@@ -198,7 +198,21 @@ mod tests {
     #[test]
     fn sdk_version_too_high_fails() {
         let mut m = valid();
-        m.sdk_version = 3;
+        m.sdk_version = 7;
+        assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_err());
+    }
+
+    #[test]
+    fn sdk_version_6_passes() {
+        let mut m = valid();
+        m.sdk_version = 6;
+        assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_ok());
+    }
+
+    #[test]
+    fn sdk_version_7_fails() {
+        let mut m = valid();
+        m.sdk_version = 7;
         assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_err());
     }
 

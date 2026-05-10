@@ -34,6 +34,10 @@
       "endpoints": [
         "https://github.com/mike623/panna-cotta/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "mobile": [],
+      "desktop": [{ "scheme": "streamdeck" }]
     }
   }
 }

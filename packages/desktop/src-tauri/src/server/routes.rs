@@ -89,6 +89,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/execute", post(execute_handler))
         .route("/api/plugins", get(list_plugins_handler))
         .route("/api/plugins/:uuid/status", get(plugin_status_handler))
+        .route("/api/plugin-render", get(get_plugin_render_handler))
         .route("/pi/:uuid/*path", get(serve_pi_file))
         .merge(admin)
         .with_state(state)
@@ -501,6 +502,30 @@ async fn uninstall_plugin_handler(Path(_uuid): Path<String>) -> impl IntoRespons
     (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin uninstall not yet implemented"})))
 }
 
+async fn get_plugin_render_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    match state.plugin_render.lock() {
+        Ok(render) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "images": render.images,
+                "titles": render.titles,
+                "states": render.states,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error=%e, "plugin_render mutex poisoned");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal error"})),
+            )
+                .into_response()
+        }
+    }
+}
+
 // ── Plugin Inspector (PI) file server ────────────────────────────────
 
 async fn serve_pi_file(
@@ -599,14 +624,22 @@ mod tests {
     fn make_state(csrf: &str) -> Arc<AppState> {
         use std::sync::Mutex;
         use std::path::PathBuf;
+        let plugin_render = Arc::new(Mutex::new(
+            crate::server::state::PluginRenderState::default()
+        ));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(crate::server::state::default_config()),
+            crate::plugin::PluginHost::new(
+                crate::server::state::default_config(),
+                Arc::clone(&plugin_render),
+            ),
         ));
         Arc::new(AppState {
             config_dir: PathBuf::from("/tmp/test-panna"),
             port: Mutex::new(None),
             csrf_token: csrf.to_string(),
             plugin_host,
+            plugin_render,
+            app_handle: Mutex::new(None),
         })
     }
 
@@ -686,14 +719,19 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         tokio::fs::write(profiles_dir.join("Default.json"), &json).await.unwrap();
         tokio::fs::write(dir_path.join("active-profile"), "Default").await.unwrap();
+        let plugin_render = Arc::new(std::sync::Mutex::new(
+            crate::server::state::PluginRenderState::default()
+        ));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(config),
+            crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
         ));
         Arc::new(AppState {
             config_dir: dir_path,
             port: std::sync::Mutex::new(None),
             csrf_token: csrf.to_string(),
             plugin_host,
+            plugin_render,
+            app_handle: std::sync::Mutex::new(None),
         })
     }
 
@@ -1055,6 +1093,23 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json.get("logTail").is_some(), "logTail should be present with valid CSRF");
+    }
+
+    #[tokio::test]
+    async fn plugin_render_returns_empty_maps() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .uri("/api/plugin-render")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["images"].is_object());
+        assert!(json["titles"].is_object());
+        assert!(json["states"].is_object());
     }
 }
 
