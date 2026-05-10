@@ -124,7 +124,7 @@ pub async fn copy_builtin_plugins(
             continue;
         }
         let dest = dest_plugins_dir.join(&name);
-        if dest.exists() {
+        if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
             continue;
         }
         copy_dir_all(&entry.path(), &dest)
@@ -143,8 +143,10 @@ async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         let dst_path = dst.join(entry.file_name());
         if ty.is_dir() {
             Box::pin(copy_dir_all(&entry.path(), &dst_path)).await?;
-        } else {
+        } else if ty.is_file() {
             tokio::fs::copy(&entry.path(), &dst_path).await?;
+        } else {
+            tracing::warn!("skipping non-file entry in plugin bundle: {:?}", entry.path());
         }
     }
     Ok(())
