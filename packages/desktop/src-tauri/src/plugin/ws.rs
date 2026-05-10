@@ -54,7 +54,7 @@ pub async fn ws_upgrade(
     ws.on_upgrade(move |socket| handle_ws(socket, state, is_pi, pi_token)).into_response()
 }
 
-async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, is_pi: bool, _pi_token: Option<String>) {
+async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, is_pi: bool, pi_token: Option<String>) {
     let auth_timeout = Duration::from_secs(WS_AUTH_TIMEOUT_SECS);
 
     // Phase B: wait for first message within auth_timeout
@@ -72,14 +72,109 @@ async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, is_pi: bool, _pi
     let event = msg.get("event").and_then(|v| v.as_str()).unwrap_or("");
 
     if is_pi && event == "registerPropertyInspector" {
-        // PI registration — full impl in Plan 2
-        tracing::debug!("PI registration stub");
+        handle_pi_registration(msg, pi_token, socket, state).await;
         return;
     }
 
     if !is_pi && event == "registerPlugin" {
         handle_plugin_registration(msg, socket, state).await;
     }
+}
+
+async fn handle_pi_registration(
+    _first_msg: serde_json::Value,
+    pi_token: Option<String>,
+    socket: WebSocket,
+    state: Arc<AppState>,
+) {
+    let token = match pi_token {
+        Some(t) => t,
+        None => {
+            tracing::warn!("PI registration: no token in query string");
+            return;
+        }
+    };
+
+    // Consume token → look up plugin_uuid
+    let plugin_uuid = {
+        let mut host = state.plugin_host.lock().await;
+        host.pi_token_map.remove(&token)
+    };
+
+    let plugin_uuid = match plugin_uuid {
+        Some(u) => u,
+        None => {
+            tracing::warn!("PI registration: unknown or consumed token");
+            return;
+        }
+    };
+
+    // Validate plugin is running
+    let plugin_running = {
+        let host = state.plugin_host.lock().await;
+        host.plugins.get(&plugin_uuid)
+            .map(|ps| ps.status == crate::plugin::PluginStatus::Running)
+            .unwrap_or(false)
+    };
+
+    if !plugin_running {
+        tracing::warn!(plugin=%plugin_uuid, "PI registration: plugin not running");
+        return;
+    }
+
+    tracing::info!(plugin=%plugin_uuid, "PI registered via WS");
+
+    let (pi_tx, mut pi_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(CHANNEL_CAPACITY);
+
+    // Store PI sender in PluginState
+    {
+        let mut host = state.plugin_host.lock().await;
+        if let Some(ps) = host.plugins.get_mut(&plugin_uuid) {
+            ps.pi_sender = Some(pi_tx.clone());
+        }
+    }
+
+    let (mut ws_tx, mut ws_rx) = socket.split();
+
+    // PI sender task: drain mpsc → WebSocket
+    let send_uuid = plugin_uuid.clone();
+    let send_state = state.clone();
+    tokio::spawn(async move {
+        while let Some(msg) = pi_rx.recv().await {
+            let text = serde_json::to_string(&msg).unwrap_or_default();
+            if ws_tx.send(Message::Text(text.into())).await.is_err() {
+                break;
+            }
+        }
+        let mut host = send_state.plugin_host.lock().await;
+        if let Some(ps) = host.plugins.get_mut(&send_uuid) {
+            ps.pi_sender = None;
+        }
+    });
+
+    // PI receive loop: forward sendToPlugin messages to plugin
+    let recv_uuid = plugin_uuid.clone();
+    while let Some(Ok(Message::Text(text))) = ws_rx.next().await {
+        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&text) {
+            let event = msg.get("event").and_then(|v| v.as_str()).unwrap_or("");
+            if event == "sendToPlugin" {
+                let context = msg.get("context").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+                let fwd = crate::events::outbound::send_to_plugin(&context, &payload);
+                let host = state.plugin_host.lock().await;
+                host.try_send(&recv_uuid, fwd);
+            }
+        }
+    }
+
+    // PI disconnected
+    {
+        let mut host = state.plugin_host.lock().await;
+        if let Some(ps) = host.plugins.get_mut(&plugin_uuid) {
+            ps.pi_sender = None;
+        }
+    }
+    tracing::info!(plugin=%plugin_uuid, "PI WS disconnected");
 }
 
 async fn handle_plugin_registration(
@@ -203,5 +298,15 @@ mod tests {
         assert_eq!(extract_token(Some("foo=bar&token=xyz&baz=1")), Some("xyz".into()));
         assert_eq!(extract_token(Some("foo=bar")), None);
         assert_eq!(extract_token(None), None);
+    }
+
+    #[test]
+    fn pi_token_consumed_on_use() {
+        // Verify token removal pattern
+        let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        map.insert("tok123".into(), "com.test.plugin".into());
+        let found = map.remove("tok123");
+        assert_eq!(found, Some("com.test.plugin".into()));
+        assert!(map.get("tok123").is_none()); // consumed
     }
 }

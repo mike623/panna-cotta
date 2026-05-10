@@ -22,7 +22,7 @@ pub async fn dispatch(msg: serde_json::Value, plugin_uuid: &str, state: &Arc<App
         "showAlert"               => on_show_alert(&msg, plugin_uuid),
         "openUrl"                 => on_open_url(msg, plugin_uuid).await,
         "logMessage"              => on_log_message(&msg, plugin_uuid),
-        "sendToPropertyInspector" => on_send_to_pi(&msg, plugin_uuid),
+        "sendToPropertyInspector" => on_send_to_pi(&msg, plugin_uuid, state),
         _ if is_unsupported(event) => record_unsupported(plugin_uuid, event, state).await,
         _ => {}
     }
@@ -128,9 +128,18 @@ fn on_log_message(msg: &serde_json::Value, plugin_uuid: &str) {
     tracing::info!(plugin=%plugin_uuid, "[plugin] {}", text);
 }
 
-fn on_send_to_pi(msg: &serde_json::Value, plugin_uuid: &str) {
-    let ctx = msg.get("context").and_then(|v| v.as_str()).unwrap_or("?");
-    tracing::debug!(plugin=%plugin_uuid, ctx=%ctx, "sendToPropertyInspector (PI routing in Plan 2)");
+fn on_send_to_pi(msg: &serde_json::Value, plugin_uuid: &str, state: &Arc<AppState>) {
+    let context = msg.get("context").and_then(|v| v.as_str()).unwrap_or("");
+    let action_uuid = msg.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let payload = msg.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+    let fwd = crate::events::outbound::send_to_property_inspector(action_uuid, context, &payload);
+    if let Ok(host) = state.plugin_host.try_lock() {
+        if let Some(ps) = host.plugins.get(plugin_uuid) {
+            if let Some(pi_tx) = &ps.pi_sender {
+                let _ = pi_tx.try_send(fwd);
+            }
+        }
+    }
 }
 
 async fn record_unsupported(plugin_uuid: &str, event: &str, state: &Arc<AppState>) {
@@ -212,5 +221,17 @@ mod tests {
         assert!(is_unsupported("setState"));
         assert!(is_unsupported("setGlobalSettings"));
         assert!(is_unsupported("unknownFoo"));
+    }
+
+    #[tokio::test]
+    async fn send_to_pi_no_panic_when_no_pi_sender() {
+        let state = test_state(vec![]);
+        dispatch(serde_json::json!({
+            "event": "sendToPropertyInspector",
+            "context": "ctx001",
+            "action": "com.test.action",
+            "payload": {"key": "value"}
+        }), "com.test.plugin", &state).await;
+        // No panic = pass
     }
 }
