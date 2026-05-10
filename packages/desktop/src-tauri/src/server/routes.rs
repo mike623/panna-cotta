@@ -493,7 +493,7 @@ async fn plugin_status_handler(
         crate::plugin::PluginStatus::Running    => "running".to_string(),
         crate::plugin::PluginStatus::Starting   => "starting".to_string(),
         crate::plugin::PluginStatus::Stopped    => "stopped".to_string(),
-        crate::plugin::PluginStatus::Errored(e) => format!("errored: {e}"),
+        crate::plugin::PluginStatus::Errored(_) => "errored".to_string(),
     }).unwrap_or_else(|| "not_spawned".to_string());
 
     let mut response = serde_json::json!({
@@ -823,6 +823,20 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["plugins"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_plugins_accessible_from_lan() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
     }
 
     #[tokio::test]
