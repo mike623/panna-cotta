@@ -505,12 +505,25 @@ async fn uninstall_plugin_handler(Path(_uuid): Path<String>) -> impl IntoRespons
 async fn get_plugin_render_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let render = state.plugin_render.lock().unwrap();
-    Json(serde_json::json!({
-        "images": render.images,
-        "titles": render.titles,
-        "states": render.states,
-    }))
+    match state.plugin_render.lock() {
+        Ok(render) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "images": render.images,
+                "titles": render.titles,
+                "states": render.states,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error=%e, "plugin_render mutex poisoned");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal error"})),
+            )
+                .into_response()
+        }
+    }
 }
 
 // ── Plugin Inspector (PI) file server ────────────────────────────────
