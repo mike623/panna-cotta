@@ -6,6 +6,16 @@ pub struct InstallResult {
     pub name: String,
 }
 
+/// Validate that a UUID is safe (no path traversal, null bytes, or empty).
+/// Rejects `/`, `\`, `..`, and null bytes.
+fn is_safe_uuid(uuid: &str) -> bool {
+    !uuid.is_empty()
+        && !uuid.contains('/')
+        && !uuid.contains('\\')
+        && !uuid.contains("..")
+        && !uuid.contains('\0')
+}
+
 /// Full install flow: download → unzip → validate → place → return uuid+name.
 pub async fn install_from_url(
     url: &str,
@@ -22,9 +32,28 @@ pub async fn install_from_url(
 }
 
 /// Download URL to bytes, aborting if > 50 MB.
+/// Uses a custom redirect policy that only follows HTTPS redirects.
 async fn download_plugin(url: &str) -> Result<Vec<u8>, String> {
     const MAX_BYTES: usize = 50 * 1024 * 1024;
-    let resp = reqwest::get(url).await.map_err(|e| format!("download failed: {e}"))?;
+
+    // Custom redirect policy: only follow HTTPS redirects, max 5 hops
+    let policy = reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 5 {
+            return attempt.error("too many redirects");
+        }
+        let scheme = attempt.url().scheme().to_string();
+        match scheme.as_str() {
+            "https" => attempt.follow(),
+            other => attempt.error(format!("refused non-https redirect to {}", other)),
+        }
+    });
+
+    let client = reqwest::Client::builder()
+        .redirect(policy)
+        .build()
+        .map_err(|e| format!("client build: {e}"))?;
+
+    let resp = client.get(url).send().await.map_err(|e| format!("download failed: {e}"))?;
     if !resp.status().is_success() {
         return Err(format!("download HTTP {}", resp.status()));
     }
@@ -47,6 +76,9 @@ async fn extract_plugin(bytes: &[u8], config_dir: &Path) -> Result<PathBuf, Stri
 
 fn extract_plugin_sync(bytes: &[u8], config_dir: &Path) -> Result<PathBuf, String> {
     use std::io::Cursor;
+    const MAX_EXTRACTED_BYTES: u64 = 200 * 1024 * 1024;
+    let mut total_extracted: u64 = 0;
+
     let cursor = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("invalid ZIP: {e}"))?;
 
@@ -84,7 +116,12 @@ fn extract_plugin_sync(bytes: &[u8], config_dir: &Path) -> Result<PathBuf, Strin
             }
             let mut out = std::fs::File::create(&out_path)
                 .map_err(|e| format!("create {rel}: {e}"))?;
-            std::io::copy(&mut file, &mut out).map_err(|e| format!("write {rel}: {e}"))?;
+            let copied = std::io::copy(&mut file, &mut out).map_err(|e| format!("write {rel}: {e}"))?;
+            total_extracted = total_extracted.saturating_add(copied);
+            if total_extracted > MAX_EXTRACTED_BYTES {
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                return Err("extracted size exceeds 200 MB".to_string());
+            }
         }
     }
     Ok(dest)
@@ -109,6 +146,11 @@ async fn load_plugin_dir(sdplugin_dir: &Path, config_dir: &Path) -> Result<Insta
     let manifest: crate::plugin::manifest::Manifest =
         serde_json::from_str(&raw).map_err(|e| format!("parse manifest: {e}"))?;
     crate::plugin::manifest::validate(&manifest, sdplugin_dir)?;
+
+    // Validate UUID before using it in path construction
+    if !is_safe_uuid(&manifest.uuid) {
+        return Err(format!("unsafe plugin UUID: {}", manifest.uuid));
+    }
 
     let dest = config_dir
         .join("plugins")
@@ -301,5 +343,67 @@ mod tests {
     #[test]
     fn extract_plugin_url_returns_none_for_unknown_scheme() {
         assert!(extract_plugin_url("https://example.com/foo").is_none());
+    }
+
+    #[test]
+    fn rejects_unsafe_uuid() {
+        assert!(!is_safe_uuid(""));
+        assert!(!is_safe_uuid("../escape"));
+        assert!(!is_safe_uuid("foo/bar"));
+        assert!(!is_safe_uuid("foo\\bar"));
+        assert!(!is_safe_uuid("a\0b"));
+        assert!(is_safe_uuid("com.spotify.sdPlugin"));
+        assert!(is_safe_uuid("com.test.my-plugin_v2"));
+    }
+
+    #[tokio::test]
+    async fn load_plugin_dir_rejects_unsafe_uuid() {
+        // Create an extracted dir with a manifest that has an unsafe uuid
+        let dir = tempfile::tempdir().unwrap();
+        let extracted = dir.path().join("extracted.sdPlugin");
+        tokio::fs::create_dir_all(&extracted).await.unwrap();
+        let manifest = serde_json::json!({
+            "UUID": "../../escape",
+            "Name": "Bad Plugin",
+            "SDKVersion": 2,
+            "CodePath": "bin/plugin.js",
+            "Actions": [{"UUID": "evil.action", "Name": "Act"}]
+        });
+        tokio::fs::write(extracted.join("manifest.json"), manifest.to_string()).await.unwrap();
+        tokio::fs::create_dir_all(extracted.join("bin")).await.unwrap();
+        tokio::fs::write(extracted.join("bin").join("plugin.js"), "// plugin").await.unwrap();
+        // Ensure dest dirs exist so the only error is from uuid validation
+        tokio::fs::create_dir_all(dir.path().join("plugins")).await.unwrap();
+        let result = load_plugin_dir(&extracted, dir.path()).await;
+        assert!(result.is_err(), "expected error for unsafe uuid, got {:?}", result);
+        let err = result.unwrap_err();
+        assert!(err.contains("unsafe") || err.contains("UUID"), "error should mention unsafe uuid: {err}");
+    }
+
+    #[tokio::test]
+    async fn rejects_zip_bomb() {
+        // Construct a ZIP whose stored contents (uncompressed) exceed 200 MB
+        // We use a single large file to make this fast: a ~210 MB run of zeros
+        // The zip crate stores this; total_extracted check should trip
+        let dir = tempfile::tempdir().unwrap();
+        tokio::fs::create_dir_all(dir.path().join("plugins")).await.unwrap();
+        let mut buf = Vec::new();
+        {
+            let cursor = std::io::Cursor::new(&mut buf);
+            let mut zip = zip::ZipWriter::new(cursor);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file("com.bomb.sdPlugin/big.bin", options).unwrap();
+            // Write 210 MB of zeros — highly compressible
+            let chunk = vec![0u8; 1024 * 1024]; // 1 MB
+            for _ in 0..210 {
+                zip.write_all(&chunk).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        let result = extract_plugin(&buf, dir.path()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("200 MB") || err.contains("exceeds"), "should reject as bomb: {err}");
     }
 }
