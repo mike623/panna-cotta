@@ -53,3 +53,53 @@ pub async fn list_plugins_cmd(state: State<'_, Arc<AppState>>) -> Result<Vec<Plu
     }; // guard dropped here
     Ok(plugins)
 }
+
+pub async fn read_global_settings(config_dir: &std::path::Path, plugin_uuid: &str) -> serde_json::Value {
+    let path = config_dir.join("globals").join(format!("{}.json", plugin_uuid));
+    match tokio::fs::read_to_string(&path).await {
+        Ok(raw) => serde_json::from_str(&raw).unwrap_or(serde_json::json!({})),
+        Err(_) => serde_json::json!({}),
+    }
+}
+
+pub async fn write_global_settings(
+    config_dir: &std::path::Path,
+    plugin_uuid: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    let globals_dir = config_dir.join("globals");
+    tokio::fs::create_dir_all(&globals_dir).await.map_err(|e| e.to_string())?;
+    let path = globals_dir.join(format!("{}.json", plugin_uuid));
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    tokio::fs::write(&tmp, json).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&tmp, &path).await.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_global_settings_returns_empty_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = read_global_settings(dir.path(), "com.spotify.sdPlugin").await;
+        assert_eq!(result, serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    async fn write_then_read_global_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let value = serde_json::json!({"token": "abc"});
+        write_global_settings(dir.path(), "com.spotify.sdPlugin", &value).await.unwrap();
+        let read = read_global_settings(dir.path(), "com.spotify.sdPlugin").await;
+        assert_eq!(read["token"], "abc");
+    }
+
+    #[tokio::test]
+    async fn write_global_settings_creates_globals_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        write_global_settings(dir.path(), "com.test.plugin", &serde_json::json!({})).await.unwrap();
+        assert!(dir.path().join("globals").join("com.test.plugin.json").exists());
+    }
+}

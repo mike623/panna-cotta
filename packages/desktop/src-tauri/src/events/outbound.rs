@@ -80,6 +80,14 @@ pub fn send_to_property_inspector(action_uuid: &str, context: &str, payload: &Va
     m
 }
 
+pub fn did_receive_global_settings(plugin_uuid: &str, settings: &Value) -> Value {
+    json!({
+        "event": "didReceiveGlobalSettings",
+        "context": plugin_uuid,
+        "payload": { "settings": settings }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +134,14 @@ mod tests {
         let msg = send_to_plugin("ctx1", &serde_json::json!({"x":1}));
         assert_eq!(msg["event"], "sendToPlugin");
         assert_eq!(msg["payload"]["x"], 1);
+    }
+
+    #[test]
+    fn did_receive_global_settings_shape() {
+        let settings = serde_json::json!({"token": "abc123"});
+        let msg = did_receive_global_settings("com.spotify.sdPlugin", &settings);
+        assert_eq!(msg["event"], "didReceiveGlobalSettings");
+        assert_eq!(msg["context"], "com.spotify.sdPlugin");
+        assert_eq!(msg["payload"]["settings"]["token"], "abc123");
     }
 }
