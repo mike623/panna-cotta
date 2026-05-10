@@ -12,6 +12,12 @@ use crate::server::routes::is_localhost_addr;
 use crate::server::state::AppState;
 use crate::plugin::{PluginStatus, CHANNEL_CAPACITY, PENDING_REGISTRATION_TIMEOUT_SECS, WS_AUTH_TIMEOUT_SECS};
 
+fn extract_token(query: Option<&str>) -> Option<String> {
+    query?.split('&')
+        .find(|part| part.starts_with("token="))
+        .map(|part| part["token=".len()..].to_string())
+}
+
 pub async fn ws_upgrade(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -36,6 +42,7 @@ pub async fn ws_upgrade(
     }
 
     let is_pi = !origin.is_empty();
+    let pi_token = extract_token(req.uri().query());
 
     // Now attempt WS upgrade extraction from the request parts
     let (mut parts, _body) = req.into_parts();
@@ -44,10 +51,10 @@ pub async fn ws_upgrade(
         Err(rejection) => return rejection.into_response(),
     };
 
-    ws.on_upgrade(move |socket| handle_ws(socket, state, is_pi)).into_response()
+    ws.on_upgrade(move |socket| handle_ws(socket, state, is_pi, pi_token)).into_response()
 }
 
-async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, is_pi: bool) {
+async fn handle_ws(mut socket: WebSocket, state: Arc<AppState>, is_pi: bool, _pi_token: Option<String>) {
     let auth_timeout = Duration::from_secs(WS_AUTH_TIMEOUT_SECS);
 
     // Phase B: wait for first message within auth_timeout
@@ -120,6 +127,26 @@ async fn handle_plugin_registration(
 
     tracing::info!(uuid = %uuid, "plugin registered via WS");
 
+    // Fire startup lifecycle events (lock order: PluginHost → profile_state)
+    {
+        let host = state.plugin_host.lock().await;
+        let ps = host.profile_state.lock().await;
+        let cols = ps.grid.cols;
+        let rows = ps.grid.rows;
+
+        // deviceDidConnect must precede willAppear (Elgato protocol ordering)
+        let _ = tx.try_send(crate::events::outbound::device_did_connect(cols, rows));
+
+        for (idx, btn) in ps.buttons.iter().enumerate() {
+            if host.registry.get(&btn.action_uuid).map(|u| u == &uuid).unwrap_or(false) {
+                let msg = crate::events::outbound::will_appear(
+                    &btn.action_uuid, &btn.context, &btn.settings, idx, cols,
+                );
+                let _ = tx.try_send(msg);
+            }
+        }
+    }
+
     // Split the socket into sender/receiver halves
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -159,4 +186,17 @@ async fn handle_plugin_registration(
         }
     }
     tracing::info!(uuid = %uuid, "plugin WS disconnected");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_token_from_query_string() {
+        assert_eq!(extract_token(Some("token=abc123")), Some("abc123".into()));
+        assert_eq!(extract_token(Some("foo=bar&token=xyz&baz=1")), Some("xyz".into()));
+        assert_eq!(extract_token(Some("foo=bar")), None);
+        assert_eq!(extract_token(None), None);
+    }
 }
