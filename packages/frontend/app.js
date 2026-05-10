@@ -11,26 +11,6 @@ class StreamDeckAPI {
     return response.json();
   }
 
-  async executeAction(action, target) {
-    const response = await fetch(`${this.baseUrl}/api/execute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, target }),
-    });
-    if (!response.ok) throw new Error(`Execute failed: ${response.status}`);
-    return response.json();
-  }
-
-  async openUrl(url) {
-    const response = await fetch(`${this.baseUrl}/api/open-url`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
-    if (!response.ok) throw new Error(`Open URL failed: ${response.status}`);
-    return response.json();
-  }
-
   async ping() {
     const response = await fetch(`${this.baseUrl}/api/health`, {
       signal: AbortSignal.timeout(3000),

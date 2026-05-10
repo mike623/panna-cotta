@@ -40,59 +40,6 @@ async fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-async fn run_shell_command(cmd: &str) -> Result<(), String> {
-    let status = if cfg!(windows) {
-        tokio::process::Command::new("cmd").args(["/C", cmd]).status().await
-    } else {
-        tokio::process::Command::new("sh").args(["-c", cmd]).status().await
-    };
-    status
-        .map_err(|e| e.to_string())
-        .and_then(|s| if s.success() { Ok(()) } else { Err(format!("command exited: {s}")) })
-}
-
-async fn dispatch_context(button: &crate::server::state::Button) -> Result<(), String> {
-    let uuid = button.action_uuid.as_str();
-    let s = &button.settings;
-    match uuid {
-        "com.pannacotta.system.open-app" => {
-            let app = s.get("appName").and_then(|v| v.as_str()).ok_or("missing appName")?;
-            crate::commands::system::open_app(app.to_string()).await
-        }
-        "com.pannacotta.browser.open-url" => {
-            let url = s.get("url").and_then(|v| v.as_str()).ok_or("missing url")?;
-            validate_url(url).await?;
-            crate::commands::system::open_url(url.to_string()).await
-        }
-        "com.pannacotta.system.volume-up" => {
-            crate::commands::system::execute_command("volume-up".into(), "".into()).await
-        }
-        "com.pannacotta.system.volume-down" => {
-            crate::commands::system::execute_command("volume-down".into(), "".into()).await
-        }
-        "com.pannacotta.system.volume-mute" => {
-            crate::commands::system::execute_command("volume-mute".into(), "".into()).await
-        }
-        "com.pannacotta.system.brightness-up" => {
-            crate::commands::system::execute_command("brightness-up".into(), "".into()).await
-        }
-        "com.pannacotta.system.brightness-down" => {
-            crate::commands::system::execute_command("brightness-down".into(), "".into()).await
-        }
-        "com.pannacotta.system.sleep" => {
-            crate::commands::system::execute_command("sleep".into(), "".into()).await
-        }
-        "com.pannacotta.system.lock" => {
-            crate::commands::system::execute_command("lock".into(), "".into()).await
-        }
-        "com.pannacotta.system.run-command" => {
-            let cmd = s.get("command").and_then(|v| v.as_str()).ok_or("missing command")?;
-            run_shell_command(cmd).await
-        }
-        _ => Err(format!("unknown actionUUID: {uuid}")),
-    }
-}
-
 async fn require_admin(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -330,8 +277,6 @@ async fn delete_profile_handler(
 #[derive(serde::Deserialize)]
 struct ExecuteBody {
     context: Option<String>,
-    action: Option<String>,
-    target: Option<String>,
 }
 
 async fn execute_handler(
@@ -384,7 +329,7 @@ async fn execute_handler(
         let result = if plugin_dispatched {
             Ok(())
         } else {
-            dispatch_context(&button).await
+            Err(format!("no plugin running for actionUUID: {}", button.action_uuid))
         };
         match result {
             Ok(()) => {
@@ -393,19 +338,11 @@ async fn execute_handler(
             }
             Err(e) => {
                 tracing::warn!(action = %button.action_uuid, context = %button.context, error = %e, "button dispatch failed");
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response()
+                (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response()
             }
         }
-    } else if let (Some(action), Some(target)) = (body.action, body.target) {
-        if !is_local {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "use {context} from LAN"}))).into_response();
-        }
-        match crate::commands::system::execute_command(action, target).await {
-            Ok(_) => Json(serde_json::json!({"success": true})).into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        }
     } else {
-        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "provide {context} or {action,target}"}))).into_response()
+        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "provide {context}"}))).into_response()
     }
 }
 
