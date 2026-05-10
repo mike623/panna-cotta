@@ -108,7 +108,7 @@ async fn handle_plugin_registration(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(CHANNEL_CAPACITY);
 
-    // Register: move from pending to running, set sender, flush pre-reg queue
+    // Register: move from pending to running, set sender
     let queued: Vec<serde_json::Value> = {
         let mut host = state.plugin_host.lock().await;
         host.pending_registrations.remove(&uuid);
@@ -121,13 +121,9 @@ async fn handle_plugin_registration(
         }
     };
 
-    for msg in queued {
-        let _ = tx.try_send(msg);
-    }
-
     tracing::info!(uuid = %uuid, "plugin registered via WS");
 
-    // Fire startup lifecycle events (lock order: PluginHost → profile_state)
+    // Fire startup lifecycle events first (lock order: PluginHost → profile_state)
     {
         let host = state.plugin_host.lock().await;
         let ps = host.profile_state.lock().await;
@@ -135,16 +131,25 @@ async fn handle_plugin_registration(
         let rows = ps.grid.rows;
 
         // deviceDidConnect must precede willAppear (Elgato protocol ordering)
-        let _ = tx.try_send(crate::events::outbound::device_did_connect(cols, rows));
+        if tx.try_send(crate::events::outbound::device_did_connect(cols, rows)).is_err() {
+            tracing::warn!(uuid = %uuid, "deviceDidConnect dropped: channel full at registration");
+        }
 
         for (idx, btn) in ps.buttons.iter().enumerate() {
             if host.registry.get(&btn.action_uuid).map(|u| u == &uuid).unwrap_or(false) {
                 let msg = crate::events::outbound::will_appear(
                     &btn.action_uuid, &btn.context, &btn.settings, idx, cols,
                 );
-                let _ = tx.try_send(msg);
+                if tx.try_send(msg).is_err() {
+                    tracing::warn!(uuid = %uuid, idx = idx, "willAppear dropped: channel full at registration");
+                }
             }
         }
+    }
+
+    // Flush pre-reg queue after lifecycle events
+    for msg in queued {
+        let _ = tx.try_send(msg);
     }
 
     // Split the socket into sender/receiver halves
