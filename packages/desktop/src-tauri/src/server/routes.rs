@@ -571,7 +571,13 @@ window.connectElgatoStreamDeckSocket = function(inPort, inUUID, inRegisterEvent,
         };
         return (
             StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            [
+                (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (
+                    axum::http::header::CONTENT_SECURITY_POLICY,
+                    "default-src 'self'; script-src 'unsafe-inline' 'self'; connect-src ws://127.0.0.1:* 'self'",
+                ),
+            ],
             injected,
         ).into_response();
     }
