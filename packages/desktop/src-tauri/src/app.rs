@@ -5,6 +5,7 @@ use tauri::{
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_deep_link::DeepLinkExt;
 use crate::server::state::AppState;
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -96,6 +97,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(app_state.clone())
         .invoke_handler(tauri::generate_handler![
             crate::commands::config::get_config,
@@ -154,6 +156,22 @@ pub fn run() {
 
             // Store AppHandle so inbound events can fire Tauri events
             *state.app_handle.lock().unwrap() = Some(app.handle().clone());
+
+            // Deep-link: intercept streamdeck://plugins/install?url=...
+            {
+                let state_dl = app_state.clone();
+                let handle_dl = app.handle().clone();
+                app.deep_link().on_open_url(move |url_event| {
+                    for url in url_event.urls() {
+                        let url_str = url.to_string();
+                        let s = state_dl.clone();
+                        let h = handle_dl.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crate::commands::plugin_install::handle_deep_link(&url_str, &s, &h).await;
+                        });
+                    }
+                });
+            }
 
             tauri::async_runtime::spawn(async move {
                 match crate::server::start(state.clone()).await {
