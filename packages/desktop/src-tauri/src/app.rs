@@ -153,7 +153,10 @@ pub fn run() {
 
             tauri::async_runtime::spawn(async move {
                 match crate::server::start(state.clone()).await {
-                    Ok(port) => update_tray_tooltip(&app_handle, Some(port), true),
+                    Ok(port) => {
+                        update_tray_tooltip(&app_handle, Some(port), true);
+                        crate::server::post_start_spawn(state, &app_handle).await;
+                    }
                     Err(e) => {
                         tracing::error!(error = %e, "server failed to start");
                         update_tray_tooltip(&app_handle, None, false);

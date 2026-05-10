@@ -72,6 +72,8 @@ pub struct PluginHost {
     pub pending_registrations: HashMap<String, Instant>, // UUID → spawn time
     pub pi_token_map: HashMap<String, String>,     // PI token → plugin_uuid
     pub profile_state: Arc<tokio::sync::Mutex<StreamDeckConfig>>,
+    pub manifests: HashMap<String, crate::plugin::manifest::Manifest>,
+    pub plugin_dirs: HashMap<String, std::path::PathBuf>,
 }
 
 impl PluginHost {
@@ -82,6 +84,8 @@ impl PluginHost {
             pending_registrations: HashMap::new(),
             pi_token_map: HashMap::new(),
             profile_state: Arc::new(tokio::sync::Mutex::new(config)),
+            manifests: HashMap::new(),
+            plugin_dirs: HashMap::new(),
         }
     }
 
@@ -244,6 +248,13 @@ mod tests {
         assert!(host.plugins.is_empty());
         assert!(host.registry.is_empty());
         assert!(host.pending_registrations.is_empty());
+    }
+
+    #[test]
+    fn plugin_host_has_manifests_and_dirs() {
+        let host = PluginHost::new(default_config());
+        assert!(host.manifests.is_empty());
+        assert!(host.plugin_dirs.is_empty());
     }
 
     #[test]
