@@ -125,6 +125,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/open-app", post(open_app_handler))
         .route("/api/open-url", post(open_url_handler))
         .route("/api/open-config-folder", post(open_config_folder_handler))
+        .route("/api/plugins/install", post(install_plugin_handler))
+        .route("/api/plugins/:uuid", axum::routing::delete(uninstall_plugin_handler))
         .layer(middleware::from_fn_with_state(state.clone(), require_admin));
 
     Router::new()
@@ -138,6 +140,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/config/default", get(get_default_config_handler))
         .route("/api/profiles", get(list_profiles_handler))
         .route("/api/execute", post(execute_handler))
+        .route("/api/plugins", get(list_plugins_handler))
+        .route("/api/plugins/:uuid/status", get(plugin_status_handler))
         .merge(admin)
         .with_state(state)
 }
@@ -438,6 +442,87 @@ async fn open_config_folder_handler(State(state): State<Arc<AppState>>) -> impl 
     Json(json!({"ok": true}))
 }
 
+// ── Plugin handlers ───────────────────────────────────────────────────
+
+async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let host = state.plugin_host.lock().await;
+    let plugins: Vec<serde_json::Value> = host.manifests.iter().map(|(uuid, manifest)| {
+        let status = host.plugins.get(uuid)
+            .map(|ps| match &ps.status {
+                crate::plugin::PluginStatus::Running   => "running",
+                crate::plugin::PluginStatus::Starting  => "starting",
+                crate::plugin::PluginStatus::Stopped   => "stopped",
+                crate::plugin::PluginStatus::Errored(_) => "errored",
+            })
+            .unwrap_or("not_spawned");
+        serde_json::json!({
+            "uuid": uuid,
+            "name": manifest.name,
+            "version": manifest.version,
+            "author": manifest.author,
+            "description": manifest.description,
+            "status": status,
+            "actions": manifest.actions.iter().map(|a| serde_json::json!({
+                "uuid": a.uuid,
+                "name": a.name,
+            })).collect::<Vec<_>>(),
+        })
+    }).collect();
+    Json(serde_json::json!({ "plugins": plugins }))
+}
+
+async fn plugin_status_handler(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(uuid): Path<String>,
+) -> impl IntoResponse {
+    let has_csrf = is_localhost_addr(&addr) && headers
+        .get("X-Panna-CSRF")
+        .and_then(|v| v.to_str().ok())
+        .map(|t| csrf_eq(t, &state.csrf_token))
+        .unwrap_or(false);
+
+    let host = state.plugin_host.lock().await;
+    if !host.manifests.contains_key(&uuid) {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plugin not found"}))).into_response();
+    }
+
+    let ps = host.plugins.get(&uuid);
+    let status_str = ps.map(|p| match &p.status {
+        crate::plugin::PluginStatus::Running    => "running".to_string(),
+        crate::plugin::PluginStatus::Starting   => "starting".to_string(),
+        crate::plugin::PluginStatus::Stopped    => "stopped".to_string(),
+        crate::plugin::PluginStatus::Errored(e) => format!("errored: {e}"),
+    }).unwrap_or_else(|| "not_spawned".to_string());
+
+    let mut response = serde_json::json!({
+        "uuid": &uuid,
+        "status": status_str,
+        "crashCount": ps.map(|p| p.crash_count).unwrap_or(0),
+        "unsupportedEvents": ps.map(|p| {
+            let mut v: Vec<String> = p.unsupported_events.iter().cloned().collect();
+            v.sort();
+            v
+        }).unwrap_or_default(),
+        "settingsNotPersisted": ps.map(|p| p.settings_not_persisted).unwrap_or(false),
+    });
+
+    if has_csrf {
+        response["logTail"] = serde_json::json!(null);
+    }
+
+    Json(response).into_response()
+}
+
+async fn install_plugin_handler() -> impl IntoResponse {
+    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin install not yet implemented"})))
+}
+
+async fn uninstall_plugin_handler(Path(_uuid): Path<String>) -> impl IntoResponse {
+    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin uninstall not yet implemented"})))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -721,6 +806,53 @@ mod tests {
         // oneshot doesn't establish a real WS connection (no hyper upgrade ext),
         // so 101 isn't reachable; just verify auth passed (not blocked with 403)
         assert_ne!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn get_plugins_returns_empty_list() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["plugins"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn plugin_status_unknown_uuid_returns_404() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.nobody.plugin/status")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn install_plugin_returns_501() {
+        let state = make_state("tok");
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/plugins/install")
+            .header("X-Panna-CSRF", "tok")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"source":"npm","name":"my-plugin"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 501);
     }
 
     #[tokio::test]
