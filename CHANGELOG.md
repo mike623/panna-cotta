@@ -2,6 +2,19 @@
 
 All notable changes to Panna Cotta are documented here.
 
+## [0.2.0.0] - 2026-05-10
+
+### Added
+- Plugin admin UI: ActionSidebar now loads plugins dynamically via `list_plugins` Tauri command — live status badges show running/starting/errored/stopped state for each plugin
+- ButtonEditor now detects plugin actions and renders a Property Inspector iframe (PI) when available, falling back to a JSON settings editor for plugins without a PI
+- `PropertyInspectorPath` field added to plugin manifest `Action` schema and exposed via `/api/plugins` HTTP route and `list_plugins_cmd` Tauri command
+- Property Inspector HTML files served with Content-Security-Policy header restricting script and connection sources to `127.0.0.1`
+
+### Fixed
+- Volume mute action now toggles mute on/off correctly (was using invalid AppleScript syntax `set volume with output muted`; now uses `set volume output muted not (output muted of (get volume settings))`)
+- `PropertyInspectorPath` in plugin manifests is now validated for path traversal (`..`) and absolute paths at load time, matching the existing `CodePath` security checks
+- Property Inspector iframe sandbox now includes `allow-same-origin` so PI scripts can make HTTP requests to the local Panna Cotta server
+
 ## [0.1.11] - 2026-05-04
 
 ### Added

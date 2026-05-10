@@ -138,7 +138,7 @@ async function handleKeyDown(msg) {
       break;
     case 'com.pannacotta.system.volume-mute':
       if (process.platform === 'darwin')
-        run(`osascript -e 'set volume with output muted'`);
+        run(`osascript -e 'set volume output muted not (output muted of (get volume settings))'`);
       break;
     case 'com.pannacotta.system.brightness-up':
       if (process.platform === 'darwin')

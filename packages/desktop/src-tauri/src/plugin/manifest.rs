@@ -69,6 +69,21 @@ pub fn validate_with_platform(manifest: &Manifest, _plugin_dir: &Path, platform:
         if !seen.insert(&action.uuid) {
             return Err(format!("Duplicate action UUID: {}", action.uuid));
         }
+        if let Some(pi_path) = &action.property_inspector_path {
+            let pi = Path::new(pi_path);
+            if pi.is_absolute() {
+                return Err(format!(
+                    "PropertyInspectorPath in action '{}' must be relative",
+                    action.uuid
+                ));
+            }
+            if pi.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return Err(format!(
+                    "PropertyInspectorPath in action '{}' contains '..' and could escape plugin directory",
+                    action.uuid
+                ));
+            }
+        }
     }
     if manifest.sdk_version > 2 {
         return Err(format!("SDKVersion {} > 2 is not supported", manifest.sdk_version));
@@ -240,6 +255,20 @@ mod tests {
         }"#;
         let m: Manifest = serde_json::from_str(json).unwrap();
         assert_eq!(m.actions[0].property_inspector_path.as_deref(), Some("pi/index.html"));
+    }
+
+    #[test]
+    fn dotdot_pi_path_fails() {
+        let mut m = valid();
+        m.actions[0].property_inspector_path = Some("../evil/pi.html".into());
+        assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_err());
+    }
+
+    #[test]
+    fn absolute_pi_path_fails() {
+        let mut m = valid();
+        m.actions[0].property_inspector_path = Some("/etc/passwd".into());
+        assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_err());
     }
 
     #[test]
