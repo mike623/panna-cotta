@@ -5,13 +5,14 @@
   import GridEditor from './components/GridEditor.svelte'
   import ButtonEditor from './components/ButtonEditor.svelte'
   import ActionSidebar from './components/ActionSidebar.svelte'
-  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder, getServerInfo } from './lib/invoke'
-  import type { StreamDeckConfig, Profile, ServerInfo } from './lib/types'
+  import { getConfig, getDefaultConfig, listProfiles, openConfigFolder, getServerInfo, listPlugins } from './lib/invoke'
+  import type { StreamDeckConfig, Profile, ServerInfo, PluginInfo } from './lib/types'
 
   let config: StreamDeckConfig | null = null
   let profiles: Profile[] = []
   let selectedIndex = -1
   let serverInfo: ServerInfo | null = null
+  let plugins: PluginInfo[] = []
   let toastMsg = ''
   let toastOk = true
   let toastVisible = false
@@ -25,10 +26,11 @@
   }
 
   async function reload() {
-    const [cfg, profs, info] = await Promise.all([getConfig(), listProfiles(), getServerInfo()])
+    const [cfg, profs, info, plugs] = await Promise.all([getConfig(), listProfiles(), getServerInfo(), listPlugins().catch(() => [] as PluginInfo[])])
     config = cfg
     profiles = profs
     serverInfo = info
+    plugins = plugs
     selectedIndex = -1
   }
 
@@ -66,12 +68,14 @@
         bind:this={editorRef}
         {config}
         {selectedIndex}
+        {serverInfo}
+        {plugins}
         on:save={reload}
         on:toast={e => showToast(e.detail.message, e.detail.ok)}
       />
     </div>
     <ActionSidebar
-      on:use={e => editorRef?.prefill(e.detail)}
+      on:use={e => { selectedIndex = -1; editorRef?.prefill(e.detail) }}
     />
   </div>
   {#if serverInfo}

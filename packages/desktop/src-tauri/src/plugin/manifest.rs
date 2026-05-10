@@ -36,6 +36,8 @@ pub struct Action {
     pub uuid: String,
     #[serde(rename = "Name", default)]
     pub name: String,
+    #[serde(rename = "PropertyInspectorPath", default)]
+    pub property_inspector_path: Option<String>,
 }
 
 pub fn validate(manifest: &Manifest, plugin_dir: &Path) -> Result<(), String> {
@@ -108,6 +110,7 @@ mod tests {
             actions: vec![Action {
                 uuid: "com.example.plugin.action".into(),
                 name: "A".into(),
+                property_inspector_path: None,
             }],
         }
     }
@@ -166,10 +169,12 @@ mod tests {
             Action {
                 uuid: "com.dup".into(),
                 name: "A".into(),
+                property_inspector_path: None,
             },
             Action {
                 uuid: "com.dup".into(),
                 name: "B".into(),
+                property_inspector_path: None,
             },
         ];
         assert!(validate_with_platform(&m, Path::new("/tmp"), "mac").is_err());
@@ -218,5 +223,35 @@ mod tests {
         assert_eq!(m.uuid, "com.example.plugin");
         assert_eq!(m.sdk_version, 2);
         assert_eq!(m.actions.len(), 1);
+    }
+
+    #[test]
+    fn parse_action_with_pi_path() {
+        let json = r#"{
+            "UUID": "com.example.plugin",
+            "Name": "Example",
+            "SDKVersion": 2,
+            "CodePath": "bin/plugin.js",
+            "Actions": [{
+                "UUID": "com.example.plugin.act",
+                "Name": "Act",
+                "PropertyInspectorPath": "pi/index.html"
+            }]
+        }"#;
+        let m: Manifest = serde_json::from_str(json).unwrap();
+        assert_eq!(m.actions[0].property_inspector_path.as_deref(), Some("pi/index.html"));
+    }
+
+    #[test]
+    fn parse_action_without_pi_path() {
+        let json = r#"{
+            "UUID": "com.example.plugin",
+            "Name": "Example",
+            "SDKVersion": 2,
+            "CodePath": "bin/plugin.js",
+            "Actions": [{"UUID": "com.example.plugin.act", "Name": "Act"}]
+        }"#;
+        let m: Manifest = serde_json::from_str(json).unwrap();
+        assert!(m.actions[0].property_inspector_path.is_none());
     }
 }

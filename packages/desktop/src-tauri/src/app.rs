@@ -109,6 +109,7 @@ pub fn run() {
             crate::commands::config::open_config_folder,
             crate::commands::config::get_csrf_token,
             crate::commands::config::open_log_folder,
+            crate::commands::plugins::list_plugins_cmd,
             crate::commands::system::open_app,
             crate::commands::system::open_url,
             crate::commands::system::quit_app,
