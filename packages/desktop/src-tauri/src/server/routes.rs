@@ -593,14 +593,22 @@ mod tests {
     fn make_state(csrf: &str) -> Arc<AppState> {
         use std::sync::Mutex;
         use std::path::PathBuf;
+        let plugin_render = Arc::new(Mutex::new(
+            crate::server::state::PluginRenderState::default()
+        ));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(crate::server::state::default_config()),
+            crate::plugin::PluginHost::new(
+                crate::server::state::default_config(),
+                Arc::clone(&plugin_render),
+            ),
         ));
         Arc::new(AppState {
             config_dir: PathBuf::from("/tmp/test-panna"),
             port: Mutex::new(None),
             csrf_token: csrf.to_string(),
             plugin_host,
+            plugin_render,
+            app_handle: Mutex::new(None),
         })
     }
 
@@ -680,14 +688,19 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         tokio::fs::write(profiles_dir.join("Default.json"), &json).await.unwrap();
         tokio::fs::write(dir_path.join("active-profile"), "Default").await.unwrap();
+        let plugin_render = Arc::new(std::sync::Mutex::new(
+            crate::server::state::PluginRenderState::default()
+        ));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(config),
+            crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
         ));
         Arc::new(AppState {
             config_dir: dir_path,
             port: std::sync::Mutex::new(None),
             csrf_token: csrf.to_string(),
             plugin_host,
+            plugin_render,
+            app_handle: std::sync::Mutex::new(None),
         })
     }
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use rand::{Rng, rngs::OsRng};
@@ -109,11 +110,30 @@ pub struct Profile {
 
 
 
+#[derive(Debug, Default)]
+pub struct PluginRenderState {
+    pub images: HashMap<String, String>,
+    pub titles: HashMap<String, String>,
+    pub states: HashMap<String, u32>,
+}
+
+impl PluginRenderState {
+    pub fn remove_contexts(&mut self, contexts: &[String]) {
+        for ctx in contexts {
+            self.images.remove(ctx);
+            self.titles.remove(ctx);
+            self.states.remove(ctx);
+        }
+    }
+}
+
 pub struct AppState {
     pub config_dir: PathBuf,
     pub port: Mutex<Option<u16>>,
     pub csrf_token: String,
     pub plugin_host: Arc<tokio::sync::Mutex<crate::plugin::PluginHost>>,
+    pub plugin_render: Arc<Mutex<PluginRenderState>>,
+    pub app_handle: Mutex<Option<tauri::AppHandle>>,
 }
 
 impl Default for AppState {
@@ -130,10 +150,18 @@ impl AppState {
         let bytes: [u8; 32] = OsRng.gen();
         let csrf_token: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
         let config_dir = PathBuf::from(home).join(".panna-cotta");
+        let plugin_render = Arc::new(Mutex::new(PluginRenderState::default()));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(default_config()),
+            crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
         ));
-        Self { config_dir, port: Mutex::new(None), csrf_token, plugin_host }
+        Self {
+            config_dir,
+            port: Mutex::new(None),
+            csrf_token,
+            plugin_host,
+            plugin_render,
+            app_handle: Mutex::new(None),
+        }
     }
 
     /// Load active profile from disk into plugin_host.profile_state.
@@ -447,6 +475,20 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn plugin_render_state_remove_contexts() {
+        let mut r = PluginRenderState::default();
+        r.images.insert("ctx1".into(), "data:image/png;base64,abc".into());
+        r.titles.insert("ctx1".into(), "Track".into());
+        r.states.insert("ctx1".into(), 1);
+        r.images.insert("ctx2".into(), "data:image/png;base64,def".into());
+        r.remove_contexts(&["ctx1".to_string()]);
+        assert!(!r.images.contains_key("ctx1"));
+        assert!(!r.titles.contains_key("ctx1"));
+        assert!(!r.states.contains_key("ctx1"));
+        assert!(r.images.contains_key("ctx2")); // ctx2 untouched
+    }
+
+    #[test]
     fn app_state_has_csrf_token() {
         let state = AppState::new();
         assert_eq!(state.csrf_token.len(), 64); // 32 bytes = 64 hex chars
@@ -462,14 +504,17 @@ mod tests {
 
     fn temp_state() -> (AppState, TempDir) {
         let dir = tempfile::tempdir().unwrap();
+        let plugin_render = Arc::new(std::sync::Mutex::new(PluginRenderState::default()));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(default_config()),
+            crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
         ));
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
-            port: Mutex::new(None),
+            port: std::sync::Mutex::new(None),
             csrf_token: "test_csrf_token_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             plugin_host,
+            plugin_render,
+            app_handle: std::sync::Mutex::new(None),
         };
         (state, dir)
     }

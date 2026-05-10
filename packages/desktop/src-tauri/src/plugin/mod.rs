@@ -76,10 +76,14 @@ pub struct PluginHost {
     pub profile_state: Arc<tokio::sync::Mutex<StreamDeckConfig>>,
     pub manifests: HashMap<String, crate::plugin::manifest::Manifest>,
     pub plugin_dirs: HashMap<String, std::path::PathBuf>,
+    pub plugin_render: Arc<std::sync::Mutex<crate::server::state::PluginRenderState>>,
 }
 
 impl PluginHost {
-    pub fn new(config: StreamDeckConfig) -> Self {
+    pub fn new(
+        config: StreamDeckConfig,
+        plugin_render: Arc<std::sync::Mutex<crate::server::state::PluginRenderState>>,
+    ) -> Self {
         Self {
             registry: HashMap::new(),
             plugins: HashMap::new(),
@@ -88,6 +92,7 @@ impl PluginHost {
             profile_state: Arc::new(tokio::sync::Mutex::new(config)),
             manifests: HashMap::new(),
             plugin_dirs: HashMap::new(),
+            plugin_render,
         }
     }
 
@@ -192,6 +197,18 @@ impl PluginHost {
 
     /// Stop a plugin: cancel restart handle, kill process.
     pub async fn stop_plugin(&mut self, uuid: &str) {
+        // Collect contexts belonging to this plugin and wipe render state
+        let contexts: Vec<String> = {
+            let ps = self.profile_state.lock().await;
+            ps.buttons.iter()
+                .filter(|b| self.registry.get(&b.action_uuid).map(|u| u == uuid).unwrap_or(false))
+                .map(|b| b.context.clone())
+                .collect()
+        };
+        if let Ok(mut render) = self.plugin_render.lock() {
+            render.remove_contexts(&contexts);
+        }
+
         if let Some(ps) = self.plugins.get_mut(uuid) {
             if let Some(h) = ps.restart_handle.take() { h.abort(); }
             ps.status = PluginStatus::Stopped;
@@ -290,9 +307,13 @@ mod tests {
     use super::*;
     use crate::server::state::{Button, Grid, StreamDeckConfig, default_config};
 
+    fn make_render() -> Arc<std::sync::Mutex<crate::server::state::PluginRenderState>> {
+        Arc::new(std::sync::Mutex::new(crate::server::state::PluginRenderState::default()))
+    }
+
     #[test]
     fn plugin_host_new_is_empty() {
-        let host = PluginHost::new(default_config());
+        let host = PluginHost::new(default_config(), make_render());
         assert!(host.plugins.is_empty());
         assert!(host.registry.is_empty());
         assert!(host.pending_registrations.is_empty());
@@ -300,20 +321,20 @@ mod tests {
 
     #[test]
     fn plugin_host_has_manifests_and_dirs() {
-        let host = PluginHost::new(default_config());
+        let host = PluginHost::new(default_config(), make_render());
         assert!(host.manifests.is_empty());
         assert!(host.plugin_dirs.is_empty());
     }
 
     #[test]
     fn plugin_for_action_returns_none_when_empty() {
-        let host = PluginHost::new(default_config());
+        let host = PluginHost::new(default_config(), make_render());
         assert!(host.plugin_for_action("com.pannacotta.system.open-app").is_none());
     }
 
     #[test]
     fn try_send_returns_false_when_no_plugin() {
-        let host = PluginHost::new(default_config());
+        let host = PluginHost::new(default_config(), make_render());
         assert!(!host.try_send("unknown", serde_json::json!({"event":"keyDown"})));
     }
 
@@ -326,7 +347,7 @@ mod tests {
 
     #[test]
     fn queue_pre_reg_caps_at_limit() {
-        let mut host = PluginHost::new(default_config());
+        let mut host = PluginHost::new(default_config(), make_render());
         host.plugins.insert("p1".into(), PluginState::new());
         for _ in 0..=PRE_REG_QUEUE_LIMIT + 5 {
             host.queue_pre_reg("p1", serde_json::json!({}));
@@ -336,7 +357,7 @@ mod tests {
 
     #[test]
     fn crash_recovery_increments_count() {
-        let mut host = PluginHost::new(default_config());
+        let mut host = PluginHost::new(default_config(), make_render());
         host.plugins.insert("p".into(), PluginState::new());
         assert!(host.record_crash("p"));
         assert_eq!(host.plugins["p"].crash_count, 1);
@@ -345,7 +366,7 @@ mod tests {
 
     #[test]
     fn crash_recovery_errors_at_limit() {
-        let mut host = PluginHost::new(default_config());
+        let mut host = PluginHost::new(default_config(), make_render());
         host.plugins.insert("p".into(), PluginState::new());
         for _ in 0..MAX_CRASHES {
             host.record_crash("p");
@@ -356,7 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_plugin_adds_to_pending() {
-        let mut host = PluginHost::new(default_config());
+        let mut host = PluginHost::new(default_config(), make_render());
         #[cfg(unix)] let (bin, code) = (std::path::Path::new("/bin/sh"), std::path::Path::new("-c exit 0"));
         #[cfg(windows)] let (bin, code) = (std::path::Path::new("cmd.exe"), std::path::Path::new("/C exit 0"));
         host.spawn_plugin("com.test.p", bin, code, 30000).await.unwrap();
@@ -381,7 +402,7 @@ mod tests {
                 lan_allowed: None,
             }],
         };
-        let mut host = PluginHost::new(old_cfg);
+        let mut host = PluginHost::new(old_cfg, make_render());
         host.registry.insert("com.pannacotta.system.open-app".into(), "com.pannacotta.system".into());
         let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
         let mut ps = PluginState::new();
@@ -412,7 +433,7 @@ mod tests {
             grid: Grid { rows: 2, cols: 3 },
             buttons: vec![],
         };
-        let mut host = PluginHost::new(old_cfg);
+        let mut host = PluginHost::new(old_cfg, make_render());
         host.registry.insert("com.pannacotta.system.open-app".into(), "com.pannacotta.system".into());
         let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
         let mut ps = PluginState::new();

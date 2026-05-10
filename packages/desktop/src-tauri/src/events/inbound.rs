@@ -167,14 +167,19 @@ mod tests {
 
     fn test_state(buttons: Vec<Button>) -> Arc<AppState> {
         let config = StreamDeckConfig { grid: Grid { rows: 2, cols: 3 }, buttons };
+        let plugin_render = Arc::new(std::sync::Mutex::new(
+            crate::server::state::PluginRenderState::default()
+        ));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
-            crate::plugin::PluginHost::new(config),
+            crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
         ));
         Arc::new(AppState {
             config_dir: "/tmp/test-inbound".into(),
             port: std::sync::Mutex::new(None),
             csrf_token: "test".into(),
             plugin_host,
+            plugin_render,
+            app_handle: std::sync::Mutex::new(None),
         })
     }
 
