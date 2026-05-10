@@ -201,7 +201,7 @@
     {:else if hasPi && piUrl}
       <div class="field full pi-wrapper">
         <label>Property Inspector</label>
-        <iframe title="Property Inspector" src={piUrl} class="pi-frame" sandbox="allow-scripts allow-forms"></iframe>
+        <iframe title="Property Inspector" src={piUrl} class="pi-frame" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
       </div>
     {:else if showJsonEditor}
       <div class="field full">
