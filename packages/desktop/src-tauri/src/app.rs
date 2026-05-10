@@ -110,6 +110,7 @@ pub fn run() {
             crate::commands::config::get_csrf_token,
             crate::commands::config::open_log_folder,
             crate::commands::plugins::list_plugins_cmd,
+            crate::commands::plugins::get_plugin_render,
             crate::commands::system::open_app,
             crate::commands::system::open_url,
             crate::commands::system::quit_app,
@@ -150,6 +151,9 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             let state = app_state.clone();
+
+            // Store AppHandle so inbound events can fire Tauri events
+            *state.app_handle.lock().unwrap() = Some(app.handle().clone());
 
             tauri::async_runtime::spawn(async move {
                 match crate::server::start(state.clone()).await {

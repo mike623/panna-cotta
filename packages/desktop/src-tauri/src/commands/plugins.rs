@@ -64,6 +64,23 @@ pub async fn list_plugins_cmd(state: State<'_, Arc<AppState>>) -> Result<Vec<Plu
     Ok(plugins)
 }
 
+#[derive(Serialize)]
+pub struct PluginRenderDto {
+    pub images: std::collections::HashMap<String, String>,
+    pub titles: std::collections::HashMap<String, String>,
+    pub states: std::collections::HashMap<String, u32>,
+}
+
+#[tauri::command]
+pub async fn get_plugin_render(state: State<'_, Arc<AppState>>) -> Result<PluginRenderDto, String> {
+    let render = state.plugin_render.lock().map_err(|e| e.to_string())?;
+    Ok(PluginRenderDto {
+        images: render.images.clone(),
+        titles: render.titles.clone(),
+        states: render.states.clone(),
+    })
+}
+
 pub async fn read_global_settings(config_dir: &std::path::Path, plugin_uuid: &str) -> serde_json::Value {
     // Reject invalid UUIDs to prevent path traversal attacks
     if !is_valid_plugin_uuid(plugin_uuid) {
