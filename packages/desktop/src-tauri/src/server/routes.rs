@@ -40,59 +40,6 @@ async fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-async fn run_shell_command(cmd: &str) -> Result<(), String> {
-    let status = if cfg!(windows) {
-        tokio::process::Command::new("cmd").args(["/C", cmd]).status().await
-    } else {
-        tokio::process::Command::new("sh").args(["-c", cmd]).status().await
-    };
-    status
-        .map_err(|e| e.to_string())
-        .and_then(|s| if s.success() { Ok(()) } else { Err(format!("command exited: {s}")) })
-}
-
-async fn dispatch_context(button: &crate::server::state::Button) -> Result<(), String> {
-    let uuid = button.action_uuid.as_str();
-    let s = &button.settings;
-    match uuid {
-        "com.pannacotta.system.open-app" => {
-            let app = s.get("appName").and_then(|v| v.as_str()).ok_or("missing appName")?;
-            crate::commands::system::open_app(app.to_string()).await
-        }
-        "com.pannacotta.browser.open-url" => {
-            let url = s.get("url").and_then(|v| v.as_str()).ok_or("missing url")?;
-            validate_url(url).await?;
-            crate::commands::system::open_url(url.to_string()).await
-        }
-        "com.pannacotta.system.volume-up" => {
-            crate::commands::system::execute_command("volume-up".into(), "".into()).await
-        }
-        "com.pannacotta.system.volume-down" => {
-            crate::commands::system::execute_command("volume-down".into(), "".into()).await
-        }
-        "com.pannacotta.system.volume-mute" => {
-            crate::commands::system::execute_command("volume-mute".into(), "".into()).await
-        }
-        "com.pannacotta.system.brightness-up" => {
-            crate::commands::system::execute_command("brightness-up".into(), "".into()).await
-        }
-        "com.pannacotta.system.brightness-down" => {
-            crate::commands::system::execute_command("brightness-down".into(), "".into()).await
-        }
-        "com.pannacotta.system.sleep" => {
-            crate::commands::system::execute_command("sleep".into(), "".into()).await
-        }
-        "com.pannacotta.system.lock" => {
-            crate::commands::system::execute_command("lock".into(), "".into()).await
-        }
-        "com.pannacotta.system.run-command" => {
-            let cmd = s.get("command").and_then(|v| v.as_str()).ok_or("missing command")?;
-            run_shell_command(cmd).await
-        }
-        _ => Err(format!("unknown actionUUID: {uuid}")),
-    }
-}
-
 async fn require_admin(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -142,6 +89,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/execute", post(execute_handler))
         .route("/api/plugins", get(list_plugins_handler))
         .route("/api/plugins/:uuid/status", get(plugin_status_handler))
+        .route("/pi/:uuid/*path", get(serve_pi_file))
         .merge(admin)
         .with_state(state)
 }
@@ -329,8 +277,6 @@ async fn delete_profile_handler(
 #[derive(serde::Deserialize)]
 struct ExecuteBody {
     context: Option<String>,
-    action: Option<String>,
-    target: Option<String>,
 }
 
 async fn execute_handler(
@@ -383,7 +329,7 @@ async fn execute_handler(
         let result = if plugin_dispatched {
             Ok(())
         } else {
-            dispatch_context(&button).await
+            Err(format!("no plugin running for actionUUID: {}", button.action_uuid))
         };
         match result {
             Ok(()) => {
@@ -392,19 +338,11 @@ async fn execute_handler(
             }
             Err(e) => {
                 tracing::warn!(action = %button.action_uuid, context = %button.context, error = %e, "button dispatch failed");
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response()
+                (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response()
             }
         }
-    } else if let (Some(action), Some(target)) = (body.action, body.target) {
-        if !is_local {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "use {context} from LAN"}))).into_response();
-        }
-        match crate::commands::system::execute_command(action, target).await {
-            Ok(_) => Json(serde_json::json!({"success": true})).into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        }
     } else {
-        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "provide {context} or {action,target}"}))).into_response()
+        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "provide {context}"}))).into_response()
     }
 }
 
@@ -555,6 +493,88 @@ async fn install_plugin_handler() -> impl IntoResponse {
 
 async fn uninstall_plugin_handler(Path(_uuid): Path<String>) -> impl IntoResponse {
     (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin uninstall not yet implemented"})))
+}
+
+// ── Plugin Inspector (PI) file server ────────────────────────────────
+
+async fn serve_pi_file(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Path((plugin_uuid, rel_path)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if !is_localhost_addr(&addr) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    // Path safety: no traversal, no absolute paths
+    if rel_path.contains("..") || rel_path.starts_with('/') {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let plugin_dir = {
+        let host = state.plugin_host.lock().await;
+        host.plugin_dirs.get(&plugin_uuid).cloned()
+    };
+
+    let plugin_dir = match plugin_dir {
+        Some(d) => d,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let file_path = plugin_dir.join(&rel_path);
+    let bytes = match tokio::fs::read(&file_path).await {
+        Ok(b) => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let mime = mime_guess::from_path(&rel_path).first_or_octet_stream();
+    let content_type = mime.as_ref().to_string();
+
+    if content_type.contains("text/html") {
+        let token: String = {
+            use rand::Rng;
+            let token_bytes: [u8; 32] = rand::thread_rng().gen();
+            token_bytes.iter().map(|b| format!("{:02x}", b)).collect()
+        };
+        {
+            let mut host = state.plugin_host.lock().await;
+            host.pi_token_map.insert(token.clone(), plugin_uuid.clone());
+        }
+        let html = String::from_utf8_lossy(&bytes);
+        let bridge = format!(
+            r#"<script>
+const PI_TOKEN = '{token}';
+window.connectElgatoStreamDeckSocket = function(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {{
+  const ws = new WebSocket(`ws://127.0.0.1:${{inPort}}/ws?token=${{PI_TOKEN}}`);
+  ws.onopen = () => ws.send(JSON.stringify({{
+    event: inRegisterEvent,
+    uuid: inUUID,
+    actionInfo: typeof inActionInfo === 'string' ? JSON.parse(inActionInfo) : inActionInfo
+  }}));
+  ws.onmessage = (e) => {{
+    const msg = JSON.parse(e.data);
+    window.dispatchEvent(new MessageEvent(msg.event || 'message', {{ data: e.data }}));
+  }};
+}};
+</script>"#
+        );
+        let injected = if html.contains("</body>") {
+            html.replacen("</body>", &format!("{bridge}</body>"), 1)
+        } else {
+            format!("{html}{bridge}")
+        };
+        return (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            injected,
+        ).into_response();
+    }
+
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, content_type)],
+        bytes,
+    ).into_response()
 }
 
 #[cfg(test)]
@@ -927,6 +947,49 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let btn = &json["buttons"][0];
         assert_eq!(btn["settings"]["appName"], "Terminal");
+    }
+
+    #[tokio::test]
+    async fn pi_route_from_lan_returns_403() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.test.plugin/pi.html")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn pi_route_unknown_plugin_returns_404() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.unknown.plugin/pi.html")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn pi_route_path_traversal_rejected() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.test.plugin/../../../etc/passwd")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        // 400 or 404 — either is correct since URI normalization may strip traversal
+        assert!(res.status() == 400 || res.status() == 404);
     }
 
     #[tokio::test]

@@ -109,7 +109,6 @@ pub fn run() {
             crate::commands::config::open_config_folder,
             crate::commands::config::get_csrf_token,
             crate::commands::config::open_log_folder,
-            crate::commands::system::execute_command,
             crate::commands::system::open_app,
             crate::commands::system::open_url,
             crate::commands::system::quit_app,
@@ -155,6 +154,16 @@ pub fn run() {
                 match crate::server::start(state.clone()).await {
                     Ok(port) => {
                         update_tray_tooltip(&app_handle, Some(port), true);
+                        // Copy built-in plugins from Tauri resources to ~/.panna-cotta/plugins/
+                        if let Ok(resource_dir) = app_handle.path().resource_dir() {
+                            let resource_plugins = resource_dir.join("plugins");
+                            let dest_plugins = state.config_dir.join("plugins");
+                            if resource_plugins.exists() {
+                                if let Err(e) = crate::server::copy_builtin_plugins(&resource_plugins, &dest_plugins).await {
+                                    tracing::warn!(error = %e, "copy built-in plugins failed");
+                                }
+                            }
+                        }
                         crate::server::post_start_spawn(state, &app_handle).await;
                     }
                     Err(e) => {

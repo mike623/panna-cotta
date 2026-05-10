@@ -1,0 +1,17 @@
+{
+  "Name": "Browser Actions",
+  "Version": "1.0.0",
+  "Author": "Panna Cotta",
+  "Description": "Built-in browser action: open URLs",
+  "UUID": "com.pannacotta.browser",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "OS": [
+    { "Platform": "mac", "MinimumVersion": "10.15" },
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "linux", "MinimumVersion": "" }
+  ],
+  "Actions": [
+    { "Name": "Open URL", "UUID": "com.pannacotta.browser.open-url", "Icon": "assets/icon" }
+  ]
+}

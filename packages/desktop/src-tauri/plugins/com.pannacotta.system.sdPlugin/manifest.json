@@ -1,0 +1,25 @@
+{
+  "Name": "System Actions",
+  "Version": "1.0.0",
+  "Author": "Panna Cotta",
+  "Description": "Built-in system actions: open apps, volume, brightness, sleep, lock, run commands",
+  "UUID": "com.pannacotta.system",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 2,
+  "OS": [
+    { "Platform": "mac", "MinimumVersion": "10.15" },
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "linux", "MinimumVersion": "" }
+  ],
+  "Actions": [
+    { "Name": "Open App", "UUID": "com.pannacotta.system.open-app", "Icon": "assets/icon" },
+    { "Name": "Volume Up", "UUID": "com.pannacotta.system.volume-up", "Icon": "assets/icon" },
+    { "Name": "Volume Down", "UUID": "com.pannacotta.system.volume-down", "Icon": "assets/icon" },
+    { "Name": "Volume Mute", "UUID": "com.pannacotta.system.volume-mute", "Icon": "assets/icon" },
+    { "Name": "Brightness Up", "UUID": "com.pannacotta.system.brightness-up", "Icon": "assets/icon" },
+    { "Name": "Brightness Down", "UUID": "com.pannacotta.system.brightness-down", "Icon": "assets/icon" },
+    { "Name": "Sleep", "UUID": "com.pannacotta.system.sleep", "Icon": "assets/icon" },
+    { "Name": "Lock Screen", "UUID": "com.pannacotta.system.lock", "Icon": "assets/icon" },
+    { "Name": "Run Command", "UUID": "com.pannacotta.system.run-command", "Icon": "assets/icon" }
+  ]
+}

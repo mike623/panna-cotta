@@ -348,12 +348,10 @@ pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String
         return Err(format!("Profile \"{}\" not found", safe));
     }
     set_active_profile_name(state, &safe).await.map_err(|e| e.to_string())?;
-    let config = read_profile(state, &safe).await;
-    // Lock order: PluginHost first, then profile_state
-    let host = state.plugin_host.lock().await;
-    let mut ps = host.profile_state.lock().await;
-    *ps = config;
-    drop(ps);
+    let new_config = read_profile(state, &safe).await;
+    // Fire lifecycle events through PluginHost (host internally acquires profile_state)
+    let mut host = state.plugin_host.lock().await;
+    host.fire_profile_lifecycle(new_config).await;
     drop(host);
     tracing::info!(profile = %safe, "profile activated");
     Ok(())
