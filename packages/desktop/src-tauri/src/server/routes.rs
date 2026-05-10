@@ -125,6 +125,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/open-app", post(open_app_handler))
         .route("/api/open-url", post(open_url_handler))
         .route("/api/open-config-folder", post(open_config_folder_handler))
+        .route("/api/plugins/install", post(install_plugin_handler))
+        .route("/api/plugins/:uuid", axum::routing::delete(uninstall_plugin_handler))
         .layer(middleware::from_fn_with_state(state.clone(), require_admin));
 
     Router::new()
@@ -133,10 +135,13 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/apps/", get(serve_apps_index))
         .route("/apps/*path", get(serve_apps_file))
         .route("/api/health", get(|| async { "OK" }))
+        .route("/ws", get(crate::plugin::ws::ws_upgrade))
         .route("/api/config", get(get_config))
         .route("/api/config/default", get(get_default_config_handler))
         .route("/api/profiles", get(list_profiles_handler))
         .route("/api/execute", post(execute_handler))
+        .route("/api/plugins", get(list_plugins_handler))
+        .route("/api/plugins/:uuid/status", get(plugin_status_handler))
         .merge(admin)
         .with_state(state)
 }
@@ -359,7 +364,28 @@ async fn execute_handler(
         if button.lan_allowed == Some(false) && !is_local {
             return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "not allowed from LAN"}))).into_response();
         }
-        match dispatch_context(&button).await {
+        let plugin_dispatched = {
+            let host = state.plugin_host.lock().await;
+            if let Some(plugin_uuid) = host.plugin_for_action(&button.action_uuid).map(|s| s.to_string()) {
+                let (index, cols) = {
+                    let ps = host.profile_state.lock().await;
+                    let idx = ps.buttons.iter().position(|b| b.context == button.context).unwrap_or(0);
+                    (idx, ps.grid.cols)
+                };
+                let msg = crate::events::outbound::key_down_with_settings(
+                    &button.action_uuid, &button.context, &button.settings, index, cols,
+                );
+                host.try_send(&plugin_uuid, msg)
+            } else {
+                false
+            }
+        };
+        let result = if plugin_dispatched {
+            Ok(())
+        } else {
+            dispatch_context(&button).await
+        };
+        match result {
             Ok(()) => {
                 tracing::info!(action = %button.action_uuid, context = %button.context, "button dispatch ok");
                 Json(serde_json::json!({"success": true})).into_response()
@@ -416,6 +442,121 @@ async fn open_config_folder_handler(State(state): State<Arc<AppState>>) -> impl 
     Json(json!({"ok": true}))
 }
 
+// ── Plugin handlers ───────────────────────────────────────────────────
+
+async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    struct PluginSnapshot {
+        uuid: String,
+        name: String,
+        version: String,
+        author: String,
+        description: String,
+        status: &'static str,
+        actions: Vec<(String, String)>, // (uuid, name)
+    }
+
+    let snapshots: Vec<PluginSnapshot> = {
+        let host = state.plugin_host.lock().await;
+        host.manifests.iter().map(|(uuid, manifest)| {
+            let status = host.plugins.get(uuid)
+                .map(|ps| match &ps.status {
+                    crate::plugin::PluginStatus::Running   => "running",
+                    crate::plugin::PluginStatus::Starting  => "starting",
+                    crate::plugin::PluginStatus::Stopped   => "stopped",
+                    crate::plugin::PluginStatus::Errored(_) => "errored",
+                })
+                .unwrap_or("not_spawned");
+            PluginSnapshot {
+                uuid: uuid.clone(),
+                name: manifest.name.clone(),
+                version: manifest.version.clone(),
+                author: manifest.author.clone(),
+                description: manifest.description.clone(),
+                status,
+                actions: manifest.actions.iter().map(|a| (a.uuid.clone(), a.name.clone())).collect(),
+            }
+        }).collect()
+    }; // guard dropped here
+
+    let plugins: Vec<serde_json::Value> = snapshots.into_iter().map(|s| {
+        serde_json::json!({
+            "uuid": s.uuid,
+            "name": s.name,
+            "version": s.version,
+            "author": s.author,
+            "description": s.description,
+            "status": s.status,
+            "actions": s.actions.iter().map(|(u, n)| serde_json::json!({"uuid": u, "name": n})).collect::<Vec<_>>(),
+        })
+    }).collect();
+    Json(serde_json::json!({ "plugins": plugins }))
+}
+
+async fn plugin_status_handler(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(uuid): Path<String>,
+) -> impl IntoResponse {
+    let has_csrf = is_localhost_addr(&addr) && headers
+        .get("X-Panna-CSRF")
+        .and_then(|v| v.to_str().ok())
+        .map(|t| csrf_eq(t, &state.csrf_token))
+        .unwrap_or(false);
+
+    // Collect data under lock, then drop before building response
+    struct StatusSnapshot {
+        status_str: String,
+        crash_count: u32,
+        unsupported_events: Vec<String>,
+        settings_not_persisted: bool,
+    }
+
+    let snapshot = {
+        let host = state.plugin_host.lock().await;
+        if !host.manifests.contains_key(&uuid) {
+            return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plugin not found"}))).into_response();
+        }
+        let ps = host.plugins.get(&uuid);
+        let status_str = ps.map(|p| match &p.status {
+            crate::plugin::PluginStatus::Running    => "running".to_string(),
+            crate::plugin::PluginStatus::Starting   => "starting".to_string(),
+            crate::plugin::PluginStatus::Stopped    => "stopped".to_string(),
+            crate::plugin::PluginStatus::Errored(_) => "errored".to_string(),
+        }).unwrap_or_else(|| "not_spawned".to_string());
+        let mut unsupported: Vec<String> = ps.map(|p| p.unsupported_events.iter().cloned().collect()).unwrap_or_default();
+        unsupported.sort();
+        StatusSnapshot {
+            status_str,
+            crash_count: ps.map(|p| p.crash_count).unwrap_or(0),
+            unsupported_events: unsupported,
+            settings_not_persisted: ps.map(|p| p.settings_not_persisted).unwrap_or(false),
+        }
+    }; // guard dropped here
+
+    let mut response = serde_json::json!({
+        "uuid": &uuid,
+        "status": snapshot.status_str,
+        "crashCount": snapshot.crash_count,
+        "unsupportedEvents": snapshot.unsupported_events,
+        "settingsNotPersisted": snapshot.settings_not_persisted,
+    });
+
+    if has_csrf {
+        response["logTail"] = serde_json::json!(null);
+    }
+
+    Json(response).into_response()
+}
+
+async fn install_plugin_handler() -> impl IntoResponse {
+    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin install not yet implemented"})))
+}
+
+async fn uninstall_plugin_handler(Path(_uuid): Path<String>) -> impl IntoResponse {
+    (StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "plugin uninstall not yet implemented"})))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,10 +567,14 @@ mod tests {
     fn make_state(csrf: &str) -> Arc<AppState> {
         use std::sync::Mutex;
         use std::path::PathBuf;
+        let plugin_host = Arc::new(tokio::sync::Mutex::new(
+            crate::plugin::PluginHost::new(crate::server::state::default_config()),
+        ));
         Arc::new(AppState {
             config_dir: PathBuf::from("/tmp/test-panna"),
             port: Mutex::new(None),
             csrf_token: csrf.to_string(),
+            plugin_host,
         })
     }
 
@@ -504,15 +649,19 @@ mod tests {
         tokio::fs::create_dir_all(&profiles_dir).await.unwrap();
         let config = crate::server::state::StreamDeckConfig {
             grid: crate::server::state::Grid { rows: 2, cols: 3 },
-            buttons,
+            buttons: buttons.clone(),
         };
         let json = serde_json::to_string_pretty(&config).unwrap();
-        tokio::fs::write(profiles_dir.join("Default.json"), json).await.unwrap();
+        tokio::fs::write(profiles_dir.join("Default.json"), &json).await.unwrap();
         tokio::fs::write(dir_path.join("active-profile"), "Default").await.unwrap();
+        let plugin_host = Arc::new(tokio::sync::Mutex::new(
+            crate::plugin::PluginHost::new(config),
+        ));
         Arc::new(AppState {
             config_dir: dir_path,
             port: std::sync::Mutex::new(None),
             csrf_token: csrf.to_string(),
+            plugin_host,
         })
     }
 
@@ -642,6 +791,119 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ws_from_lan_returns_403() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn ws_bad_origin_returns_403() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Origin", "https://evil.com")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn ws_localhost_no_origin_accepted() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET").uri("/ws")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .header("Sec-WebSocket-Version", "13")
+            // No Origin header = native process (plugin)
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty()).unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        // oneshot doesn't establish a real WS connection (no hyper upgrade ext),
+        // so 101 isn't reachable; just verify auth passed (not blocked with 403)
+        assert_ne!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn get_plugins_returns_empty_list() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["plugins"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_plugins_accessible_from_lan() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn plugin_status_unknown_uuid_returns_404() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.nobody.plugin/status")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn install_plugin_returns_501() {
+        let state = make_state("tok");
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/plugins/install")
+            .header("X-Panna-CSRF", "tok")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"source":"npm","name":"my-plugin"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 501);
+    }
+
+    #[tokio::test]
     async fn get_config_includes_settings_with_csrf() {
         let buttons = vec![crate::server::state::Button {
             name: "Secret".into(),
@@ -665,6 +927,55 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let btn = &json["buttons"][0];
         assert_eq!(btn["settings"]["appName"], "Terminal");
+    }
+
+    #[tokio::test]
+    async fn plugin_status_logtail_gated_by_csrf() {
+        let state = make_state("tok");
+        // Insert a known plugin manifest
+        {
+            let mut host = state.plugin_host.lock().await;
+            host.manifests.insert("com.test.plugin".into(), crate::plugin::manifest::Manifest {
+                uuid: "com.test.plugin".into(),
+                name: "Test".into(),
+                version: "1.0.0".into(),
+                author: "A".into(),
+                description: "d".into(),
+                sdk_version: 2,
+                code_path: "bin/plugin.js".into(),
+                os: vec![],
+                actions: vec![],
+            });
+        }
+
+        // Without CSRF: logTail should be absent
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.test.plugin/status")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("logTail").is_none(), "logTail should be absent without CSRF");
+
+        // With CSRF: logTail should be present (null)
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/plugins/com.test.plugin/status")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.get("logTail").is_some(), "logTail should be present with valid CSRF");
     }
 }
 

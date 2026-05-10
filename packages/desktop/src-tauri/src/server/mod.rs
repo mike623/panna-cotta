@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use state::AppState;
+use tauri::Emitter;
 
 const PORT_FILE_NAME: &str = ".panna-cotta.port";
 
@@ -39,6 +40,8 @@ pub async fn resolve_port() -> Result<u16, String> {
 }
 
 pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
+    state.initialize().await?;
+
     let port = resolve_port().await?;
     let router = routes::create_router(state.clone());
     let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
@@ -53,7 +56,51 @@ pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
         axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.expect("axum server failed");
     });
 
+    tracing::info!("plugin runtime ready");
     Ok(port)
+}
+
+/// Called after the Axum server is live. Discovers plugins, resolves Node.js,
+/// and spawns all installed plugins. Non-fatal: logs errors, emits Tauri event
+/// if Node.js is not found.
+pub async fn post_start_spawn(state: Arc<AppState>, app: &tauri::AppHandle) {
+    let port = state.port.lock().ok().and_then(|g| *g).unwrap_or(0);
+
+    let discovered = crate::plugin::discovery::scan_plugins(&state.config_dir).await;
+    tracing::info!(count = discovered.len(), "plugins discovered");
+
+    {
+        let mut host = state.plugin_host.lock().await;
+        for plugin in &discovered {
+            host.manifests.insert(plugin.manifest.uuid.clone(), plugin.manifest.clone());
+            host.plugin_dirs.insert(plugin.manifest.uuid.clone(), plugin.plugin_dir.clone());
+            for action in &plugin.manifest.actions {
+                host.registry.insert(action.uuid.clone(), plugin.manifest.uuid.clone());
+            }
+        }
+    }
+
+    if discovered.is_empty() {
+        tracing::info!("no plugins to spawn");
+        return;
+    }
+
+    let node_binary = match crate::plugin::runtime::resolve_node_binary(&state.config_dir).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "node binary not found");
+            let _ = app.emit("node-runtime-needed", ());
+            return;
+        }
+    };
+
+    let mut host = state.plugin_host.lock().await;
+    for plugin in &discovered {
+        let code_path = plugin.plugin_dir.join(&plugin.manifest.code_path);
+        if let Err(e) = host.spawn_plugin(&plugin.manifest.uuid, &node_binary, &code_path, port).await {
+            tracing::error!(uuid = %plugin.manifest.uuid, error = %e, "plugin spawn failed");
+        }
+    }
 }
 
 #[cfg(test)]

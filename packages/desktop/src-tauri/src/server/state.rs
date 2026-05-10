@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use rand::{Rng, rngs::OsRng};
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +113,7 @@ pub struct AppState {
     pub config_dir: PathBuf,
     pub port: Mutex<Option<u16>>,
     pub csrf_token: String,
+    pub plugin_host: Arc<tokio::sync::Mutex<crate::plugin::PluginHost>>,
 }
 
 impl Default for AppState {
@@ -128,11 +129,24 @@ impl AppState {
             .unwrap_or_else(|_| ".".to_string());
         let bytes: [u8; 32] = OsRng.gen();
         let csrf_token: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-        Self {
-            config_dir: PathBuf::from(home).join(".panna-cotta"),
-            port: Mutex::new(None),
-            csrf_token,
-        }
+        let config_dir = PathBuf::from(home).join(".panna-cotta");
+        let plugin_host = Arc::new(tokio::sync::Mutex::new(
+            crate::plugin::PluginHost::new(default_config()),
+        ));
+        Self { config_dir, port: Mutex::new(None), csrf_token, plugin_host }
+    }
+
+    /// Load active profile from disk into plugin_host.profile_state.
+    /// Call once at startup after migrate_old_config.
+    pub async fn initialize(&self) -> Result<(), String> {
+        migrate_old_config(self).await.map_err(|e| e.to_string())?;
+        let active = get_active_profile_name(self).await;
+        let config = read_profile(self, &active).await;
+        // Lock order: PluginHost first, then profile_state
+        let host = self.plugin_host.lock().await;
+        let mut ps = host.profile_state.lock().await;
+        *ps = config;
+        Ok(())
     }
 
     pub fn profiles_dir(&self) -> PathBuf {
@@ -333,13 +347,16 @@ pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String
     if !json_path.exists() && !toml_path.exists() {
         return Err(format!("Profile \"{}\" not found", safe));
     }
-    let result = set_active_profile_name(state, &safe)
-        .await
-        .map_err(|e| e.to_string());
-    if result.is_ok() {
-        tracing::info!(profile = %safe, "profile activated");
-    }
-    result
+    set_active_profile_name(state, &safe).await.map_err(|e| e.to_string())?;
+    let config = read_profile(state, &safe).await;
+    // Lock order: PluginHost first, then profile_state
+    let host = state.plugin_host.lock().await;
+    let mut ps = host.profile_state.lock().await;
+    *ps = config;
+    drop(ps);
+    drop(host);
+    tracing::info!(profile = %safe, "profile activated");
+    Ok(())
 }
 
 pub async fn delete_profile(state: &AppState, name: &str) -> Result<(), String> {
@@ -398,17 +415,22 @@ pub async fn rename_profile(state: &AppState, old: &str, new: &str) -> Result<()
 }
 
 pub async fn use_stream_deck_config(state: &AppState) -> Result<StreamDeckConfig, String> {
-    migrate_old_config(state)
-        .await
-        .map_err(|e| e.to_string())?;
-    let active = get_active_profile_name(state).await;
-    Ok(read_profile(state, &active).await)
+    let host = state.plugin_host.lock().await;
+    let config = host.profile_state.lock().await.clone();
+    Ok(config)
 }
 
 pub async fn save_stream_deck_config(
     state: &AppState,
     config: &StreamDeckConfig,
 ) -> Result<(), String> {
+    // Update in-memory first (lock order: PluginHost then profile_state)
+    {
+        let host = state.plugin_host.lock().await;
+        let mut ps = host.profile_state.lock().await;
+        *ps = config.clone();
+    }
+    // Write to disk outside both locks
     migrate_old_config(state).await.map_err(|e| e.to_string())?;
     let active = get_active_profile_name(state).await;
     tokio::fs::create_dir_all(state.profiles_dir())
@@ -442,10 +464,14 @@ mod tests {
 
     fn temp_state() -> (AppState, TempDir) {
         let dir = tempfile::tempdir().unwrap();
+        let plugin_host = Arc::new(tokio::sync::Mutex::new(
+            crate::plugin::PluginHost::new(default_config()),
+        ));
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
             port: Mutex::new(None),
             csrf_token: "test_csrf_token_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            plugin_host,
         };
         (state, dir)
     }

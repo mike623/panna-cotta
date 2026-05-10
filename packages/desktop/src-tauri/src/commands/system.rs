@@ -1,5 +1,6 @@
 use std::process::Command;
-use tauri::AppHandle;
+use std::sync::Arc;
+use tauri::{AppHandle, Manager};
 use url::Url;
 
 pub fn validate_url_scheme(url: &str) -> Result<(), String> {
@@ -92,6 +93,16 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub async fn quit_app(app: AppHandle) {
     tracing::info!("app quit");
+    let state = app.state::<Arc<crate::server::state::AppState>>();
+    let cols = {
+        let host = state.plugin_host.lock().await;
+        let ps = host.profile_state.lock().await;
+        ps.grid.cols
+    };
+    {
+        let mut host = state.plugin_host.lock().await;
+        host.shutdown(cols).await;
+    }
     app.exit(0);
 }
 
