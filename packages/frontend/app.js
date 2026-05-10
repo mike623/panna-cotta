@@ -25,6 +25,7 @@ let currentPage = 0;
 let config;
 let connectionLost = false;
 let viewMode = localStorage.getItem("viewMode") || "grid";
+let pluginRender = { images: {}, titles: {}, states: {} };
 
 function getOrCreateBanner() {
   let banner = document.getElementById("connection-banner");
@@ -50,6 +51,17 @@ function setConnectionState(online) {
   }
 }
 
+async function fetchPluginRender() {
+  try {
+    const resp = await fetch(`${api.baseUrl}/api/plugin-render`);
+    if (resp.ok) {
+      pluginRender = await resp.json();
+    }
+  } catch {
+    // Non-fatal: render state is best-effort
+  }
+}
+
 function startHealthPing() {
   setInterval(async () => {
     try {
@@ -58,6 +70,7 @@ function startHealthPing() {
     } catch {
       setConnectionState(false);
     }
+    await fetchPluginRender();
   }, 5000);
 }
 
@@ -102,14 +115,25 @@ function renderGrid() {
     button.className = "grid-button";
 
     if (buttonConfig) {
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", buttonConfig.icon);
-      icon.className = "button-icon";
-      button.appendChild(icon);
+      const pluginImage = pluginRender.images?.[buttonConfig.context];
+      const pluginTitle = pluginRender.titles?.[buttonConfig.context];
+
+      if (pluginImage) {
+        const img = document.createElement("img");
+        img.src = pluginImage;
+        img.className = "button-plugin-img";
+        img.alt = "";
+        button.appendChild(img);
+      } else {
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", buttonConfig.icon);
+        icon.className = "button-icon";
+        button.appendChild(icon);
+      }
 
       const label = document.createElement("span");
       label.className = "button-label";
-      label.textContent = buttonConfig.name;
+      label.textContent = pluginTitle ?? buttonConfig.name;
       button.appendChild(label);
 
       button.addEventListener("click", () => handleButtonPress(button, buttonConfig));
@@ -134,14 +158,25 @@ function renderList() {
     const item = document.createElement("div");
     item.className = "list-item";
 
-    const icon = document.createElement("i");
-    icon.setAttribute("data-lucide", buttonConfig.icon);
-    icon.className = "list-item-icon";
-    item.appendChild(icon);
+    const pluginImage = pluginRender.images?.[buttonConfig.context];
+    const pluginTitle = pluginRender.titles?.[buttonConfig.context];
+
+    if (pluginImage) {
+      const img = document.createElement("img");
+      img.src = pluginImage;
+      img.className = "list-item-plugin-img";
+      img.alt = "";
+      item.appendChild(img);
+    } else {
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", buttonConfig.icon);
+      icon.className = "list-item-icon";
+      item.appendChild(icon);
+    }
 
     const name = document.createElement("span");
     name.className = "list-item-name";
-    name.textContent = buttonConfig.name;
+    name.textContent = pluginTitle ?? buttonConfig.name;
     item.appendChild(name);
 
     item.addEventListener("click", () => handleButtonPress(item, buttonConfig));
@@ -192,13 +227,24 @@ function createAdjacentPage(direction) {
     const btn = document.createElement("div");
     btn.className = "grid-button";
     if (bc) {
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", bc.icon);
-      icon.className = "button-icon";
-      btn.appendChild(icon);
+      const pluginImage = pluginRender.images?.[bc.context];
+      const pluginTitle = pluginRender.titles?.[bc.context];
+
+      if (pluginImage) {
+        const img = document.createElement("img");
+        img.src = pluginImage;
+        img.className = "button-plugin-img";
+        img.alt = "";
+        btn.appendChild(img);
+      } else {
+        const icon = document.createElement("i");
+        icon.setAttribute("data-lucide", bc.icon);
+        icon.className = "button-icon";
+        btn.appendChild(icon);
+      }
       const label = document.createElement("span");
       label.className = "button-label";
-      label.textContent = bc.name;
+      label.textContent = pluginTitle ?? bc.name;
       btn.appendChild(label);
     }
     el.appendChild(btn);
@@ -300,6 +346,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  await fetchPluginRender();
   renderView();
   startHealthPing();
 
