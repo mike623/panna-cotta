@@ -390,7 +390,7 @@ async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
         author: String,
         description: String,
         status: &'static str,
-        actions: Vec<(String, String)>, // (uuid, name)
+        actions: Vec<(String, String, Option<String>)>, // (uuid, name, pi_path)
     }
 
     let snapshots: Vec<PluginSnapshot> = {
@@ -411,7 +411,7 @@ async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
                 author: manifest.author.clone(),
                 description: manifest.description.clone(),
                 status,
-                actions: manifest.actions.iter().map(|a| (a.uuid.clone(), a.name.clone())).collect(),
+                actions: manifest.actions.iter().map(|a| (a.uuid.clone(), a.name.clone(), a.property_inspector_path.clone())).collect(),
             }
         }).collect()
     }; // guard dropped here
@@ -424,7 +424,13 @@ async fn list_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
             "author": s.author,
             "description": s.description,
             "status": s.status,
-            "actions": s.actions.iter().map(|(u, n)| serde_json::json!({"uuid": u, "name": n})).collect::<Vec<_>>(),
+            "actions": s.actions.iter().map(|(u, n, pi)| {
+                let mut obj = serde_json::json!({"uuid": u, "name": n});
+                if let Some(path) = pi {
+                    obj["piPath"] = serde_json::Value::String(path.clone());
+                }
+                obj
+            }).collect::<Vec<_>>(),
         })
     }).collect();
     Json(serde_json::json!({ "plugins": plugins }))
@@ -1007,7 +1013,11 @@ mod tests {
                 sdk_version: 2,
                 code_path: "bin/plugin.js".into(),
                 os: vec![],
-                actions: vec![],
+                actions: vec![crate::plugin::manifest::Action {
+                    uuid: "com.test.plugin.action1".into(),
+                    name: "Action 1".into(),
+                    property_inspector_path: Some("pi/index.html".into()),
+                }],
             });
         }
 
