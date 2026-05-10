@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { StreamDeckConfig, Profile, ServerInfo, PluginInfo } from './types'
+import type { StreamDeckConfig, Profile, ServerInfo, PluginInfo, PluginRenderState } from './types'
 
 export const getConfig = () =>
   invoke<StreamDeckConfig>('get_config')
@@ -45,3 +45,6 @@ export const getCsrfToken = () =>
 
 export const listPlugins = () =>
   invoke<PluginInfo[]>('list_plugins_cmd')
+
+export const getPluginRender = () =>
+  invoke<PluginRenderState>('get_plugin_render')

@@ -42,3 +42,9 @@ export interface PluginInfo {
   status: 'running' | 'starting' | 'stopped' | 'errored' | 'not_spawned'
   actions: ActionInfo[]
 }
+
+export interface PluginRenderState {
+  images: Record<string, string>
+  titles: Record<string, string>
+  states: Record<string, number>
+}
