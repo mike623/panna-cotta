@@ -240,7 +240,12 @@ export function PannaApp() {
       let next = -1
       for (let i = 0; i < total; i++) if (!pg.slots[i]) { next = i; break }
       if (next < 0) return pg
-      return { ...pg, slots: { ...pg.slots, [next]: { ...pg.slots[selectedSlot] } } }
+      const src = pg.slots[selectedSlot]
+      if (!src) return pg
+      // Strip context so profileToBackend assigns a fresh one; duplicates must
+      // not share context with their source or plugin events apply to both.
+      const { context: _drop, ...clone } = src
+      return { ...pg, slots: { ...pg.slots, [next]: clone } }
     })
   }
 

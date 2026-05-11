@@ -219,8 +219,10 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, activeDragId,
   const tileRefs  = useRef(new Map<string, HTMLElement>())
   const prevRects = useRef(new Map<string, DOMRect>())
 
+  // Use context (stable per-button identity) for FLIP keys. Falling back to
+  // data hash collides when two slots share data, breaking ref tracking.
   const slotKey = (s: SlotData | undefined) =>
-    s ? `${s.actionId}|${s.label}|${s.value}|${s.iconOverride || ''}` : null
+    s ? (s.context || `${s.actionId}|${s.label}|${s.value}|${s.iconOverride || ''}`) : null
 
   useLayoutEffect(() => {
     const newRects = new Map<string, DOMRect>()
