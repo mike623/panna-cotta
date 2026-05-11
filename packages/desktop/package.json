@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e-lan": "playwright test --config=e2e-lan/playwright.config.ts",
+    "smoke": "cd smoke && npm install --no-audit --no-fund && npx wdio run wdio.conf.ts",
     "tauri": "tauri"
   },
   "dependencies": {
