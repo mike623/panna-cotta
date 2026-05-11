@@ -142,7 +142,7 @@ async fn handle_pi_registration(
     tokio::spawn(async move {
         while let Some(msg) = pi_rx.recv().await {
             let text = serde_json::to_string(&msg).unwrap_or_default();
-            if ws_tx.send(Message::Text(text.into())).await.is_err() {
+            if ws_tx.send(Message::Text(text)).await.is_err() {
                 break;
             }
         }
@@ -307,6 +307,6 @@ mod tests {
         map.insert("tok123".into(), "com.test.plugin".into());
         let found = map.remove("tok123");
         assert_eq!(found, Some("com.test.plugin".into()));
-        assert!(map.get("tok123").is_none()); // consumed
+        assert!(!map.contains_key("tok123")); // consumed
     }
 }

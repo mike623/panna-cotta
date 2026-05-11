@@ -450,4 +450,207 @@ mod tests {
         assert_eq!(msg["event"], "willDisappear");
         assert_eq!(msg["context"], "ctx001");
     }
+
+    // ── fire_profile_lifecycle: both events on overlapping profiles ──────
+    //
+    // When switching profiles, buttons unique to the OLD profile should
+    // get willDisappear, buttons unique to the NEW profile should get
+    // willAppear, and buttons present in BOTH (same context) should get
+    // neither (no churn).
+
+    #[tokio::test]
+    async fn switch_profile_fires_both_disappear_and_appear_independently() {
+        let shared = Button {
+            name: "Shared".into(),
+            icon: "s".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "shared-ctx".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        };
+        let old_only = Button {
+            name: "Old".into(),
+            icon: "o".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "old-ctx".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        };
+        let new_only = Button {
+            name: "New".into(),
+            icon: "n".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: "new-ctx".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        };
+        let old_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![shared.clone(), old_only.clone()],
+        };
+        let new_cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![shared.clone(), new_only.clone()],
+        };
+
+        let mut host = PluginHost::new(old_cfg, make_render());
+        host.registry.insert(
+            "com.pannacotta.system.open-app".into(),
+            "com.pannacotta.system".into(),
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<serde_json::Value>(32);
+        let mut ps = PluginState::new();
+        ps.sender = Some(tx);
+        ps.status = PluginStatus::Running;
+        host.plugins.insert("com.pannacotta.system".into(), ps);
+
+        host.fire_profile_lifecycle(new_cfg).await;
+
+        // Collect all messages
+        let mut events: Vec<(String, String)> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            let event = msg["event"].as_str().unwrap_or("").to_string();
+            let ctx = msg["context"].as_str().unwrap_or("").to_string();
+            events.push((event, ctx));
+        }
+
+        assert!(
+            events.contains(&("willDisappear".to_string(), "old-ctx".to_string())),
+            "expected willDisappear for old-only context, got {events:?}"
+        );
+        assert!(
+            events.contains(&("willAppear".to_string(), "new-ctx".to_string())),
+            "expected willAppear for new-only context, got {events:?}"
+        );
+        // Shared context should NOT churn
+        assert!(
+            !events
+                .iter()
+                .any(|(_, ctx)| ctx == "shared-ctx"),
+            "shared context must not emit lifecycle events, got {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn switch_profile_no_events_when_no_plugin_registered_for_action() {
+        // If no plugin is registered for the actionUUID, no events fire
+        // (we don't need to crash or panic — just silently no-op).
+        let new_cfg = StreamDeckConfig {
+            grid: Grid { rows: 1, cols: 1 },
+            buttons: vec![Button {
+                name: "Orphan".into(),
+                icon: "x".into(),
+                action_uuid: "com.unknown.plugin.action".into(),
+                context: "orphan-ctx".into(),
+                settings: serde_json::json!({}),
+                lan_allowed: None,
+            }],
+        };
+        let mut host = PluginHost::new(default_config(), make_render());
+        // No registry entry, no plugin spawned.
+        host.fire_profile_lifecycle(new_cfg).await;
+        // Just make sure profile_state still got updated.
+        let ps = host.profile_state.lock().await;
+        assert_eq!(ps.buttons[0].context, "orphan-ctx");
+    }
+
+    // ── stop_plugin clears render state ──────────────────────────────────
+
+    #[tokio::test]
+    async fn stop_plugin_clears_render_state_for_owned_contexts() {
+        // When a plugin stops, its render state (images/titles/states) for
+        // its owned button contexts should be wiped, so the LAN UI doesn't
+        // render stale graphics.
+        let cfg = StreamDeckConfig {
+            grid: Grid { rows: 1, cols: 1 },
+            buttons: vec![Button {
+                name: "Track".into(),
+                icon: "m".into(),
+                action_uuid: "com.spotify.sdPlugin.track".into(),
+                context: "spotify-ctx".into(),
+                settings: serde_json::json!({}),
+                lan_allowed: None,
+            }],
+        };
+        let render = make_render();
+        // Pre-fill render state for that context
+        {
+            let mut r = render.lock().unwrap();
+            r.images.insert("spotify-ctx".into(), "data:foo".into());
+            r.titles.insert("spotify-ctx".into(), "Bohemian Rhapsody".into());
+            r.states.insert("spotify-ctx".into(), 1);
+            // And a render entry for an unrelated context — must survive
+            r.images.insert("other-ctx".into(), "data:bar".into());
+        }
+        let mut host = PluginHost::new(cfg, Arc::clone(&render));
+        host.registry.insert(
+            "com.spotify.sdPlugin.track".into(),
+            "com.spotify.sdPlugin".into(),
+        );
+        host.plugins
+            .insert("com.spotify.sdPlugin".into(), PluginState::new());
+
+        host.stop_plugin("com.spotify.sdPlugin").await;
+
+        let r = render.lock().unwrap();
+        assert!(!r.images.contains_key("spotify-ctx"));
+        assert!(!r.titles.contains_key("spotify-ctx"));
+        assert!(!r.states.contains_key("spotify-ctx"));
+        // Other plugin's render state preserved
+        assert!(r.images.contains_key("other-ctx"));
+    }
+
+    #[tokio::test]
+    async fn stop_plugin_sets_status_to_stopped() {
+        let mut host = PluginHost::new(default_config(), make_render());
+        host.plugins.insert("p1".into(), PluginState::new());
+        host.stop_plugin("p1").await;
+        assert_eq!(host.plugins["p1"].status, PluginStatus::Stopped);
+    }
+
+    #[tokio::test]
+    async fn stop_plugin_unknown_uuid_is_noop() {
+        let mut host = PluginHost::new(default_config(), make_render());
+        // Should not panic
+        host.stop_plugin("does.not.exist").await;
+    }
+
+    // ── try_send semantics ────────────────────────────────────────────────
+
+    #[test]
+    fn try_send_returns_true_when_channel_open() {
+        let mut host = PluginHost::new(default_config(), make_render());
+        let (tx, _rx) = tokio::sync::mpsc::channel::<serde_json::Value>(8);
+        let mut ps = PluginState::new();
+        ps.sender = Some(tx);
+        host.plugins.insert("p".into(), ps);
+        assert!(host.try_send("p", serde_json::json!({"event": "test"})));
+    }
+
+    #[test]
+    fn try_send_returns_false_when_no_sender() {
+        let mut host = PluginHost::new(default_config(), make_render());
+        host.plugins.insert("p".into(), PluginState::new()); // no sender
+        assert!(!host.try_send("p", serde_json::json!({"event": "test"})));
+    }
+
+    #[test]
+    fn crash_window_resets_after_expiry() {
+        // After CRASH_WINDOW elapses, crash_count starts over. We simulate
+        // this by manually rewinding last_crash_window_start.
+        let mut host = PluginHost::new(default_config(), make_render());
+        host.plugins.insert("p".into(), PluginState::new());
+        // First crash
+        host.record_crash("p");
+        assert_eq!(host.plugins["p"].crash_count, 1);
+        // Rewind the window to just past the boundary
+        host.plugins.get_mut("p").unwrap().last_crash_window_start =
+            std::time::Instant::now() - CRASH_WINDOW - std::time::Duration::from_secs(1);
+        // Next crash should reset to count=1, not increment to 2.
+        host.record_crash("p");
+        assert_eq!(
+            host.plugins["p"].crash_count, 1,
+            "crash counter should reset after window expires"
+        );
+    }
 }

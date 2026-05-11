@@ -810,4 +810,328 @@ action = "https://apple.com"
         let loaded = use_stream_deck_config(&state).await.unwrap();
         assert_eq!(loaded.grid.rows, 4);
     }
+
+    // ── Dedup contract / roundtrip integrity tests ────────────────────────
+    //
+    // The frontend dedups slot contexts in bridge.ts profileToBackend before
+    // writing. These tests pin down the BACKEND contract: the backend is a
+    // passive store. It does NOT dedup duplicate contexts. If two buttons
+    // share a context, both are written verbatim and read back verbatim.
+    //
+    // This is intentional: backend dedup would hide frontend bugs (like the
+    // PannaApp.tsx onInspectorDuplicate regression) silently. Loud contract
+    // = noisy bugs = easy fixes.
+
+    fn make_button(name: &str, ctx: &str) -> Button {
+        Button {
+            name: name.into(),
+            icon: "icon".into(),
+            action_uuid: "com.pannacotta.system.open-app".into(),
+            context: ctx.into(),
+            settings: serde_json::json!({"appName": name}),
+            lan_allowed: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn save_roundtrip_preserves_duplicate_contexts_verbatim() {
+        // CONTRACT: backend is passive — duplicate contexts persist as-is.
+        // This is the regression guard for the PannaApp.tsx duplicate bug
+        // (where onInspectorDuplicate shallow-cloned context). If anyone
+        // adds backend dedup logic, this test will fail loudly.
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let cfg = StreamDeckConfig {
+            grid: Grid { rows: 2, cols: 3 },
+            buttons: vec![
+                make_button("Original", "shared-ctx-12"),
+                make_button("Clone", "shared-ctx-12"),
+            ],
+        };
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.buttons.len(), 2, "backend must preserve count, not dedup");
+        assert_eq!(loaded.buttons[0].context, loaded.buttons[1].context);
+        assert_eq!(loaded.buttons[0].context, "shared-ctx-12");
+    }
+
+    #[tokio::test]
+    async fn save_roundtrip_preserves_empty_placeholders_at_sparse_indices() {
+        // Index stability matters: empty slots (com.pannacotta.empty) at
+        // specific positions must roundtrip to the SAME positions, otherwise
+        // the grid renders with the wrong layout after restart.
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut buttons: Vec<Button> = (0..9)
+            .map(|i| Button {
+                name: format!("slot{i}"),
+                icon: "icon".into(),
+                action_uuid: "com.pannacotta.empty".into(),
+                context: format!("ctx-{i:02}"),
+                settings: serde_json::json!({}),
+                lan_allowed: None,
+            })
+            .collect();
+        // Make non-empty at indices 1, 2, 4, 5, 7, 8 — placeholders at 0, 3, 6
+        for i in &[1usize, 2, 4, 5, 7, 8] {
+            buttons[*i].action_uuid = "com.pannacotta.system.open-app".into();
+            buttons[*i].name = format!("real{i}");
+        }
+        let cfg = StreamDeckConfig {
+            grid: Grid { rows: 3, cols: 3 },
+            buttons,
+        };
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.buttons.len(), 9);
+        for i in &[0usize, 3, 6] {
+            assert_eq!(
+                loaded.buttons[*i].action_uuid, "com.pannacotta.empty",
+                "placeholder must remain at index {i}"
+            );
+        }
+        for i in &[1usize, 2, 4, 5, 7, 8] {
+            assert_eq!(
+                loaded.buttons[*i].action_uuid, "com.pannacotta.system.open-app",
+                "real button must remain at index {i}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn atomic_write_leaves_no_tmp_file_on_success() {
+        // write_json_atomic writes to .tmp then renames. After a successful
+        // save, the .tmp file must NOT exist (rename consumed it).
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let cfg = default_config();
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let json_path = profile_json_path(&state, "Default");
+        let tmp_path = json_path.with_extension("json.tmp");
+        assert!(json_path.exists(), "json must exist after save");
+        assert!(!tmp_path.exists(), "tmp file must be consumed by rename");
+    }
+
+    #[tokio::test]
+    async fn atomic_write_overwrites_existing_file() {
+        // Re-saving should replace the old file content cleanly.
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut cfg = default_config();
+        cfg.grid.rows = 5;
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        cfg.grid.rows = 7;
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.grid.rows, 7);
+        // Verify on-disk too (use_stream_deck_config reads from in-memory)
+        let raw = tokio::fs::read_to_string(profile_json_path(&state, "Default"))
+            .await
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed["grid"]["rows"], 7);
+    }
+
+    #[tokio::test]
+    async fn save_persists_lan_allowed_flag() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let cfg = StreamDeckConfig {
+            grid: Grid { rows: 1, cols: 1 },
+            buttons: vec![Button {
+                name: "Secret".into(),
+                icon: "x".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "secret-ctx".into(),
+                settings: serde_json::json!({"appName": "Terminal"}),
+                lan_allowed: Some(false),
+            }],
+        };
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        let loaded = use_stream_deck_config(&state).await.unwrap();
+        assert_eq!(loaded.buttons[0].lan_allowed, Some(false));
+    }
+
+    // ── Migration tests ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn migrate_when_json_and_toml_both_exist_keeps_json() {
+        // If a Default.json already exists, migrate must NOT overwrite it
+        // even if a Default.toml is also present.
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        // Pre-existing JSON profile
+        let custom = StreamDeckConfig {
+            grid: Grid { rows: 9, cols: 9 },
+            buttons: vec![],
+        };
+        let json = serde_json::to_string_pretty(&custom).unwrap();
+        tokio::fs::write(profile_json_path(&state, "Default"), &json)
+            .await
+            .unwrap();
+        // And a TOML that, if migrated, would clobber it
+        let toml_content = r#"[grid]
+rows = 1
+cols = 1
+[[buttons]]
+name = "X"
+type = "system"
+icon = "x"
+action = "Calculator"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content)
+            .await
+            .unwrap();
+        migrate_old_config(&state).await.unwrap();
+        let loaded = read_profile(&state, "Default").await;
+        assert_eq!(loaded.grid.rows, 9, "JSON must win over TOML");
+        assert_eq!(loaded.grid.cols, 9);
+    }
+
+    #[tokio::test]
+    async fn migrate_only_toml_exists_creates_json_and_backs_up_toml() {
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let toml_content = r#"[grid]
+rows = 4
+cols = 5
+[[buttons]]
+name = "Calc"
+type = "system"
+icon = "calculator"
+action = "Calculator"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content)
+            .await
+            .unwrap();
+        migrate_old_config(&state).await.unwrap();
+        assert!(profile_json_path(&state, "Default").exists());
+        assert!(
+            !profile_toml_path(&state, "Default").exists(),
+            "original .toml must be renamed away"
+        );
+        assert!(
+            state.profiles_dir().join("Default.toml.bak").exists(),
+            "backup .toml.bak must be created"
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_legacy_single_file_splits_to_default_json() {
+        // Legacy: ~/.panna-cotta/stream-deck.config.toml (single file, pre-profile system)
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(&state.config_dir).await.unwrap();
+        let legacy = r#"[grid]
+rows = 2
+cols = 4
+[[buttons]]
+name = "Safari"
+type = "browser"
+icon = "safari"
+action = "https://apple.com"
+"#;
+        tokio::fs::write(state.legacy_config_file(), legacy).await.unwrap();
+        migrate_old_config(&state).await.unwrap();
+        assert!(profile_json_path(&state, "Default").exists());
+        let loaded = read_profile(&state, "Default").await;
+        assert_eq!(loaded.grid.cols, 4);
+        assert_eq!(loaded.buttons[0].action_uuid, "com.pannacotta.browser.open-url");
+    }
+
+    #[tokio::test]
+    async fn migrate_three_calls_idempotent_no_extra_bak() {
+        // Migration must be safe to call repeatedly. No corruption, no
+        // duplicate .bak files, and the resulting JSON is stable.
+        let (state, _dir) = temp_state();
+        tokio::fs::create_dir_all(state.profiles_dir()).await.unwrap();
+        let toml_content = r#"[grid]
+rows = 2
+cols = 3
+[[buttons]]
+name = "A"
+type = "system"
+icon = "x"
+action = "Calculator"
+"#;
+        tokio::fs::write(profile_toml_path(&state, "Default"), toml_content)
+            .await
+            .unwrap();
+        migrate_old_config(&state).await.unwrap();
+        let first_content =
+            tokio::fs::read_to_string(profile_json_path(&state, "Default"))
+                .await
+                .unwrap();
+
+        migrate_old_config(&state).await.unwrap();
+        migrate_old_config(&state).await.unwrap();
+
+        let final_content =
+            tokio::fs::read_to_string(profile_json_path(&state, "Default"))
+                .await
+                .unwrap();
+        assert_eq!(first_content, final_content, "json must be byte-stable across calls");
+
+        // Only one .bak file
+        let mut bak_count = 0;
+        let mut entries = tokio::fs::read_dir(state.profiles_dir()).await.unwrap();
+        while let Some(e) = entries.next_entry().await.unwrap() {
+            if e.file_name().to_string_lossy().ends_with(".toml.bak") {
+                bak_count += 1;
+            }
+        }
+        assert_eq!(bak_count, 1, "exactly one .bak after 3 calls, got {bak_count}");
+    }
+
+    #[tokio::test]
+    async fn migrate_when_nothing_exists_creates_default_profile() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let active = get_active_profile_name(&state).await;
+        assert_eq!(active, "Default");
+        let cfg = read_profile(&state, "Default").await;
+        // Default config has 2 buttons (Calculator, Google)
+        assert_eq!(cfg.buttons.len(), 2);
+    }
+
+    // ── Rename atomicity (route layer also tested separately) ────────────
+
+    #[tokio::test]
+    async fn rename_profile_old_file_gone_new_file_has_same_contents() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut cfg = default_config();
+        cfg.grid.rows = 42;
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        // Use create_profile so we don't rename the active profile (edge case)
+        create_profile(&state, "Renameable", Some(&cfg)).await.unwrap();
+        let before = tokio::fs::read_to_string(profile_json_path(&state, "Renameable"))
+            .await
+            .unwrap();
+        rename_profile(&state, "Renameable", "Renamed").await.unwrap();
+        assert!(!profile_json_path(&state, "Renameable").exists());
+        assert!(profile_json_path(&state, "Renamed").exists());
+        let after = tokio::fs::read_to_string(profile_json_path(&state, "Renamed"))
+            .await
+            .unwrap();
+        assert_eq!(before, after, "rename must preserve contents byte-for-byte");
+    }
+
+    #[tokio::test]
+    async fn rename_active_profile_updates_active_pointer() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Active", None).await.unwrap();
+        activate_profile(&state, "Active").await.unwrap();
+        rename_profile(&state, "Active", "Renamed").await.unwrap();
+        let active = get_active_profile_name(&state).await;
+        assert_eq!(active, "Renamed");
+    }
+
+    #[tokio::test]
+    async fn safe_profile_name_strips_path_traversal() {
+        // "/" and ".." chars are stripped, so ../foo becomes "foo"
+        assert_eq!(safe_profile_name("../foo"), "foo");
+        assert_eq!(safe_profile_name("../../etc/passwd"), "etcpasswd");
+        assert_eq!(safe_profile_name("\0null\0"), "null");
+        assert_eq!(safe_profile_name("a/b"), "ab");
+    }
 }
