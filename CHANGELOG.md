@@ -2,6 +2,12 @@
 
 All notable changes to Panna Cotta are documented here.
 
+## [0.2.0.1] - 2026-05-11
+
+### Removed
+- Orphaned Svelte admin SPA stack — `App.svelte`, `main.ts`, and all four components in `packages/desktop/src/components/` (`ActionSidebar`, `ButtonEditor`, `GridEditor`, `ProfileSelector`). The React entry at `main.tsx` is live; the Svelte tree was unreachable (~700 lines).
+- Unused exports in `packages/desktop/src/lib/invoke.ts` and `packages/desktop/src/lib/types.ts` — kept only what the React entry imports (`listPlugins`, `listInstalledApps`, `PluginInfo`, `ActionInfo`).
+
 ## [0.2.0.0] - 2026-05-10
 
 ### Added
