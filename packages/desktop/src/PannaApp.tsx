@@ -17,6 +17,7 @@ import type { BackendConfig, BackendProfile } from './bridge'
 import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
 import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
 import { Icon } from './icons'
+import { useHistory } from './lib/useHistory'
 
 // ── Tauri bridge types ───────────────────────────────────────────────────────
 interface ServerInfo {
@@ -73,29 +74,21 @@ export function PannaApp() {
   }
   const theme = makeTheme(tweaks)
 
-  // Undo/redo history
-  const [history, setHistory] = useState<AppSnapshot[]>(() => [{
+  // Undo/redo history (extracted into a hook so it can be unit-tested)
+  const {
+    state,
+    hIdx,
+    commit,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    reset: resetHistory,
+  } = useHistory<AppSnapshot>({
     profiles: makeInitialProfiles(),
     activeProfileId: 'Default',
     activePageId: 'p1',
-  }])
-  const [hIdx, setHIdx] = useState(0)
-  const state = history[hIdx]
-
-  const commit = useCallback((nextOrFn: AppSnapshot | ((cur: AppSnapshot) => AppSnapshot)) => {
-    setHistory(h => {
-      const cur = h[hIdx]
-      const next = typeof nextOrFn === 'function' ? nextOrFn(cur) : nextOrFn
-      const trimmed = h.slice(0, hIdx + 1)
-      return [...trimmed, next].slice(-50)
-    })
-    setHIdx(i => Math.min(i + 1, 49))
-  }, [hIdx])
-
-  const canUndo = hIdx > 0
-  const canRedo = hIdx < history.length - 1
-  const undo = () => canUndo && setHIdx(i => i - 1)
-  const redo = () => canRedo && setHIdx(i => i + 1)
+  })
 
   // UI state
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
@@ -154,8 +147,7 @@ export function PannaApp() {
           activeProfileId: activeBackend,
           activePageId: 'p1',
         }
-        setHistory([initialState])
-        setHIdx(0)
+        resetHistory(initialState)
       } catch (err) {
         console.warn('Tauri not available, using defaults:', err)
       } finally {

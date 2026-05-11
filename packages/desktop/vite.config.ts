@@ -13,6 +13,8 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['./src/__tests__/setup.ts'],
+    globals: true,
   },
 })
