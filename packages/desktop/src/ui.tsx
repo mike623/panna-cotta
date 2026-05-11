@@ -33,6 +33,7 @@ function DraggableTemplate({ t, theme, onTemplate }: {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      data-testid={`template-${t.id}`}
       onClick={() => onTemplate(t)}
       style={{
         all: 'unset', cursor: isDragging ? 'grabbing' : 'grab',
@@ -67,6 +68,7 @@ function DraggableAction({ a, cat, theme }: {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      data-testid={`action-${a.id}`}
       style={{
         display: 'flex', alignItems: 'center', gap: 9,
         padding: '6px 7px', borderRadius: 7,
@@ -245,7 +247,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
   const ICON_SUGGESTIONS = ['globe','app','play','folder','spark','github','google','calc','code','chat','mail','calendar','sun','moon','lock','zap']
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', fontFamily: theme.font, gap: 14 }}>
+    <div data-testid="inspector" style={{ display: 'flex', flexDirection: 'column', height: '100%', fontFamily: theme.font, gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{
           width: 36, height: 36, borderRadius: 9,
@@ -257,14 +259,14 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
           {action && <Icon name={local.iconOverride || action.icon} size={20} strokeWidth={1.6} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: theme.textFaint }}>
+          <div data-testid="inspector-header" style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: theme.textFaint }}>
             Slot {slotIdx + 1}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginTop: 1 }}>
             {slot ? local.label || '(no label)' : 'Empty slot'}
           </div>
         </div>
-        <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', padding: 6, borderRadius: 6, color: theme.textFaint }}
+        <button data-testid="inspector-close" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', padding: 6, borderRadius: 6, color: theme.textFaint }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}>
           <Icon name="x" size={14} />
@@ -273,7 +275,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0, overflowY: 'auto', margin: '0 -4px', padding: '0 4px' }}>
         <Field label="Type" theme={theme}>
-          <select value={local.actionId} onChange={e => apply({ actionId: e.target.value })} style={fieldStyle(theme)}>
+          <select data-testid="inspector-type" value={local.actionId} onChange={e => apply({ actionId: e.target.value })} style={fieldStyle(theme)}>
             {ACTION_LIBRARY.map(cat => (
               <optgroup key={cat.category} label={cat.category}>
                 {cat.actions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -283,27 +285,27 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
         </Field>
 
         <Field label="Label" theme={theme}>
-          <input value={local.label} onChange={e => apply({ label: e.target.value })}
+          <input data-testid="inspector-label" value={local.label} onChange={e => apply({ label: e.target.value })}
             placeholder="GitHub" style={fieldStyle(theme)} />
         </Field>
 
         <Field label="Action value" theme={theme} hint={action?.hint}>
           {local.actionId === 'open-app' && installedApps && installedApps.length > 0 ? (
             <>
-              <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+              <input data-testid="inspector-value" value={local.value || ''} onChange={e => apply({ value: e.target.value })}
                 placeholder={action?.hint || ''} list="installed-apps-list" autoComplete="off" style={fieldStyle(theme)} />
               <datalist id="installed-apps-list">
                 {installedApps.map(app => <option key={app} value={app} />)}
               </datalist>
             </>
           ) : (
-            <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+            <input data-testid="inspector-value" value={local.value || ''} onChange={e => apply({ value: e.target.value })}
               placeholder={action?.hint || ''} style={fieldStyle(theme)} />
           )}
         </Field>
 
         <Field label="Icon (Lucide name)" theme={theme}>
-          <input value={local.iconOverride || ''} onChange={e => apply({ iconOverride: e.target.value })}
+          <input data-testid="inspector-icon" value={local.iconOverride || ''} onChange={e => apply({ iconOverride: e.target.value })}
             placeholder={action?.icon || 'spark'} style={fieldStyle(theme)} />
         </Field>
 
@@ -329,11 +331,11 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
       </div>
 
       <div style={{ display: 'flex', gap: 6, paddingTop: 10, borderTop: `0.5px solid ${theme.border}` }}>
-        <button onClick={onDuplicate} style={btnStyle(theme, 'ghost')}>
+        <button data-testid="inspector-duplicate" onClick={onDuplicate} style={btnStyle(theme, 'ghost')}>
           <Icon name="copy" size={12} /> Duplicate
         </button>
         <div style={{ flex: 1 }} />
-        <button onClick={onClear} style={btnStyle(theme, 'danger')}>
+        <button data-testid="inspector-clear" onClick={onClear} style={btnStyle(theme, 'danger')}>
           <Icon name="trash" size={12} /> Clear
         </button>
       </div>
@@ -571,7 +573,7 @@ export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, on
 
       <div style={{ flex: 1 }} />
 
-      <span style={{
+      <span data-testid="save-status" data-dirty={dirty ? 'true' : 'false'} style={{
         fontSize: 9.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
         padding: '3px 8px', borderRadius: 999,
         background: dirty
@@ -641,7 +643,7 @@ export function CommandPalette({ open, onClose, theme, onAction }: CommandPalett
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
       paddingTop: 80,
     }}>
-      <div onMouseDown={e => e.stopPropagation()} style={{
+      <div data-testid="command-palette" onMouseDown={e => e.stopPropagation()} style={{
         width: 460,
         background: theme.dark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.92)',
         backdropFilter: 'blur(40px) saturate(180%)',
@@ -651,14 +653,14 @@ export function CommandPalette({ open, onClose, theme, onAction }: CommandPalett
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: `0.5px solid ${theme.border}` }}>
           <Icon name="search" size={14} color={theme.textFaint} />
-          <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+          <input ref={inputRef} data-testid="command-palette-input" value={q} onChange={e => setQ(e.target.value)}
             placeholder="Type a command or action…"
             style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: theme.text, fontSize: 14, fontFamily: theme.font }} />
           <span style={{ fontSize: 10, color: theme.textFaint, padding: '2px 5px', borderRadius: 4, background: theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>esc</span>
         </div>
-        <div style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
+        <div data-testid="command-palette-results" style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
           {filtered.slice(0, 30).map((it, i) => (
-            <button key={i} onClick={() => { onAction(it); onClose() }} style={{
+            <button key={i} data-testid={`command-item-${it.kind}-${it.id}`} onClick={() => { onAction(it); onClose() }} style={{
               all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
               padding: '8px 10px', borderRadius: 8, width: '100%', boxSizing: 'border-box',
               color: theme.text, fontSize: 12.5,
@@ -780,7 +782,7 @@ export function ShortcutsOverlay({ open, onClose, theme }: ShortcutsOverlayProps
       background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      <div onMouseDown={e => e.stopPropagation()} style={{
+      <div data-testid="shortcuts-overlay" onMouseDown={e => e.stopPropagation()} style={{
         width: 360, padding: 22,
         background: theme.dark ? 'rgba(28,28,32,0.92)' : 'rgba(255,255,255,0.92)',
         backdropFilter: 'blur(40px) saturate(180%)',

@@ -155,7 +155,7 @@ function SlotCell({ idx, slot, theme, selected, activeDragId, onSlotClick, onFli
   const isSwap = isOver && activeDragFrom !== null && activeDragFrom !== idx && !!slot
 
   return (
-    <div ref={dropRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div ref={dropRef} data-testid={`slot-${idx}`} data-slot-idx={idx} data-filled={slot ? 'true' : 'false'} style={{ position: 'relative', width: '100%', height: '100%' }}>
       {isOver && (
         <div style={{
           position: 'absolute', inset: -3,
