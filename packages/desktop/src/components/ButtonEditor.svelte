@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte'
-  import { saveConfig } from '../lib/invoke'
+  import { createEventDispatcher, onMount } from 'svelte'
+  import { saveConfig, listInstalledApps } from '../lib/invoke'
   import type { Button, StreamDeckConfig, ServerInfo, PluginInfo } from '../lib/types'
 
   export let config: StreamDeckConfig
@@ -20,6 +20,13 @@
   let icon = ''
   let action = ''
   let jsonSettings = '{}'
+  let installedApps: string[] | null = null
+
+  onMount(() => {
+    listInstalledApps()
+      .then(apps => { installedApps = apps })
+      .catch(() => { installedApps = null })
+  })
 
   function isBuiltInUUID(uuid: string): boolean {
     return uuid.startsWith('com.pannacotta.')
@@ -197,7 +204,19 @@
           <option value="system">system</option>
         </select>
       </div>
-      <div class="field full"><label for="btn-action">Action (URL or app name)</label><input id="btn-action" bind:value={action} placeholder="https://github.com" /></div>
+      <div class="field full">
+        <label for="btn-action">Action (URL or app name)</label>
+        {#if formType === 'system' && installedApps}
+          <input id="btn-action" bind:value={action} list="installed-apps-list" placeholder="Calculator" autocomplete="off" />
+          <datalist id="installed-apps-list">
+            {#each installedApps as app}<option value={app} />{/each}
+          </datalist>
+          <small class="hint">Pick an installed app, or type a media action (volume-up, sleep, lock, …).</small>
+        {:else}
+          <input id="btn-action" bind:value={action} placeholder={formType === 'browser' ? 'https://github.com' : 'Calculator'} />
+          {#if formType === 'system'}<small class="hint">Type the exact app name (e.g., Calculator) or a media action.</small>{/if}
+        {/if}
+      </div>
     {:else if hasPi && piUrl}
       <div class="field full pi-wrapper">
         <label>Property Inspector</label>
@@ -238,6 +257,7 @@
   .pi-wrapper { gap: 0.35rem; }
   .pi-frame { width: 100%; height: 240px; border: 1px solid #3a3a3c; border-radius: 0.35rem; background: #1c1c1e; }
   .unknown-action { font-size: 0.75rem; color: #f87171; margin: 0; }
+  .hint { font-size: 0.68rem; color: #777; margin-top: 0.2rem; }
   .editor-actions { display: flex; gap: 0.4rem; margin-top: 0.55rem; }
   .btn { background: #4f46e5; color: #fff; border: none; padding: 0.35rem 0.85rem; border-radius: 0.35rem; cursor: pointer; font-size: 0.8rem; }
   .btn:hover { background: #6366f1; }
