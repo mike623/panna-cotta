@@ -7,7 +7,7 @@ import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
 import type { SlotData } from './data'
 import type { QuickTemplate, ActionDef, ActionCategory } from './data'
 import type { Theme } from './theme'
-import { listPlugins } from './lib/invoke'
+import { listPlugins, listInstalledApps } from './lib/invoke'
 import type { PluginInfo } from './lib/types'
 
 const PLUGIN_STATUS_COLOR: Record<PluginInfo['status'], string> = {
@@ -229,6 +229,13 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
     setLocal(slot || { actionId: 'open-url', label: '', value: '', iconOverride: '' })
   }, [slot, slotIdx])
 
+  const [installedApps, setInstalledApps] = useState<string[] | null>(null)
+  useEffect(() => {
+    listInstalledApps()
+      .then(apps => setInstalledApps(apps))
+      .catch(() => setInstalledApps(null))
+  }, [])
+
   const apply = (patch: Partial<SlotData>) => {
     const next = { ...local, ...patch }
     setLocal(next)
@@ -281,8 +288,18 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
         </Field>
 
         <Field label="Action value" theme={theme} hint={action?.hint}>
-          <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
-            placeholder={action?.hint || ''} style={fieldStyle(theme)} />
+          {local.actionId === 'open-app' && installedApps && installedApps.length > 0 ? (
+            <>
+              <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+                placeholder={action?.hint || ''} list="installed-apps-list" autoComplete="off" style={fieldStyle(theme)} />
+              <datalist id="installed-apps-list">
+                {installedApps.map(app => <option key={app} value={app} />)}
+              </datalist>
+            </>
+          ) : (
+            <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+              placeholder={action?.hint || ''} style={fieldStyle(theme)} />
+          )}
         </Field>
 
         <Field label="Icon (Lucide name)" theme={theme}>
