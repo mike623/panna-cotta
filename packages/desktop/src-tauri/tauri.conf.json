@@ -37,7 +37,7 @@
     },
     "deep-link": {
       "mobile": [],
-      "desktop": [{ "scheme": "streamdeck" }]
+      "desktop": [{ "schemes": ["streamdeck"] }]
     }
   }
 }

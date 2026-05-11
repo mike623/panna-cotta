@@ -7,6 +7,16 @@ import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
 import type { SlotData } from './data'
 import type { QuickTemplate, ActionDef, ActionCategory } from './data'
 import type { Theme } from './theme'
+import { listPlugins } from './lib/invoke'
+import type { PluginInfo } from './lib/types'
+
+const PLUGIN_STATUS_COLOR: Record<PluginInfo['status'], string> = {
+  running:     'oklch(0.7 0.16 145)',
+  starting:    'oklch(0.75 0.16 80)',
+  errored:     'oklch(0.6 0.18 25)',
+  stopped:     'oklch(0.6 0.02 280)',
+  not_spawned: 'oklch(0.6 0.02 280)',
+}
 
 // ── Action Palette ──────────────────────────────────────────────────────────
 function DraggableTemplate({ t, theme, onTemplate }: {
@@ -88,16 +98,40 @@ interface ActionPaletteProps {
 
 export function ActionPalette({ theme, onTemplate }: ActionPaletteProps) {
   const [query, setQuery] = useState('')
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [pluginErr, setPluginErr] = useState<string>('')
+
+  useEffect(() => {
+    let cancelled = false
+    listPlugins()
+      .then(ps => { if (!cancelled) setPlugins(ps) })
+      .catch(e => { if (!cancelled) setPluginErr(String(e)) })
+    return () => { cancelled = true }
+  }, [])
+
+  const pluginGroups: ActionCategory[] = useMemo(() => {
+    return plugins.map(p => ({
+      category: p.name,
+      color: PLUGIN_STATUS_COLOR[p.status],
+      actions: p.actions.map(a => ({
+        id: a.uuid,
+        name: a.name,
+        icon: 'spark',
+        hint: p.uuid,
+      })),
+    }))
+  }, [plugins])
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return ACTION_LIBRARY.map(cat => ({
+    const all: ActionCategory[] = [...ACTION_LIBRARY, ...pluginGroups]
+    return all.map(cat => ({
       ...cat,
       actions: cat.actions.filter(a =>
         !q || a.name.toLowerCase().includes(q) || cat.category.toLowerCase().includes(q)
       ),
     })).filter(c => c.actions.length)
-  }, [query])
+  }, [query, pluginGroups])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10, fontFamily: theme.font }}>

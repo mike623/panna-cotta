@@ -129,6 +129,7 @@ impl PluginHost {
         uuid: &str,
         node_binary: &std::path::Path,
         code_path: &std::path::Path,
+        plugin_dir: &std::path::Path,
         port: u16,
     ) -> Result<(), String> {
         let info = serde_json::json!({
@@ -137,7 +138,8 @@ impl PluginHost {
         }).to_string();
 
         let mut cmd = tokio::process::Command::new(node_binary);
-        cmd.arg(code_path)
+        cmd.current_dir(plugin_dir)
+           .arg(code_path)
            .arg("-port").arg(port.to_string())
            .arg("-pluginUUID").arg(uuid)
            .arg("-registerEvent").arg("registerPlugin")
@@ -380,7 +382,8 @@ mod tests {
         let mut host = PluginHost::new(default_config(), make_render());
         #[cfg(unix)] let (bin, code) = (std::path::Path::new("/bin/sh"), std::path::Path::new("-c exit 0"));
         #[cfg(windows)] let (bin, code) = (std::path::Path::new("cmd.exe"), std::path::Path::new("/C exit 0"));
-        host.spawn_plugin("com.test.p", bin, code, 30000).await.unwrap();
+        let dir = std::env::temp_dir();
+        host.spawn_plugin("com.test.p", bin, code, &dir, 30000).await.unwrap();
         assert!(host.pending_registrations.contains_key("com.test.p"));
         assert!(host.plugins.contains_key("com.test.p"));
         assert_eq!(host.plugins["com.test.p"].status, PluginStatus::Starting);

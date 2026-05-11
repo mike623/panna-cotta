@@ -97,14 +97,15 @@ pub async fn post_start_spawn(state: Arc<AppState>, app: &tauri::AppHandle) {
     let mut host = state.plugin_host.lock().await;
     for plugin in &discovered {
         let code_path = plugin.plugin_dir.join(&plugin.manifest.code_path);
-        if let Err(e) = host.spawn_plugin(&plugin.manifest.uuid, &node_binary, &code_path, port).await {
+        if let Err(e) = host.spawn_plugin(&plugin.manifest.uuid, &node_binary, &code_path, &plugin.plugin_dir, port).await {
             tracing::error!(uuid = %plugin.manifest.uuid, error = %e, "plugin spawn failed");
         }
     }
 }
 
 /// Copy built-in .sdPlugin dirs from Tauri resource dir to ~/.panna-cotta/plugins/.
-/// Idempotent: skips dirs that already exist at destination.
+/// Refreshes dest when the bundled manifest `Version` differs from the installed
+/// one (or dest manifest is unreadable). Missing dest → fresh copy.
 pub async fn copy_builtin_plugins(
     resource_plugins_dir: &std::path::Path,
     dest_plugins_dir: &std::path::Path,
@@ -123,16 +124,40 @@ pub async fn copy_builtin_plugins(
         if !name_str.ends_with(".sdPlugin") {
             continue;
         }
+        let src = entry.path();
         let dest = dest_plugins_dir.join(&name);
-        if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
-            continue;
+
+        let dest_exists = tokio::fs::try_exists(&dest).await.unwrap_or(false);
+        if dest_exists {
+            let src_v = read_manifest_version(&src).await;
+            let dest_v = read_manifest_version(&dest).await;
+            if src_v.is_some() && src_v == dest_v {
+                continue;
+            }
+            tracing::info!(
+                plugin = %name_str,
+                from = ?dest_v,
+                to = ?src_v,
+                "built-in plugin version drift, refreshing"
+            );
+            tokio::fs::remove_dir_all(&dest)
+                .await
+                .map_err(|e| format!("remove stale {name_str}: {e}"))?;
         }
-        copy_dir_all(&entry.path(), &dest)
+
+        copy_dir_all(&src, &dest)
             .await
             .map_err(|e| format!("copy {name_str}: {e}"))?;
-        tracing::info!("copied built-in plugin: {name_str}");
+        tracing::info!("installed built-in plugin: {name_str}");
     }
     Ok(())
+}
+
+/// Reads the `Version` field from `<plugin_dir>/manifest.json`. None on any error.
+async fn read_manifest_version(plugin_dir: &std::path::Path) -> Option<String> {
+    let bytes = tokio::fs::read(plugin_dir.join("manifest.json")).await.ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    v.get("Version")?.as_str().map(|s| s.to_string())
 }
 
 async fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -173,5 +198,63 @@ mod tests {
         copy_builtin_plugins(src.path(), dst.path()).await.unwrap();
 
         assert!(dst.path().join("com.test.sdPlugin").join("manifest.json").exists());
+    }
+
+    #[tokio::test]
+    async fn copy_builtin_plugins_refreshes_on_version_bump() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+
+        let plugin_src = src.path().join("com.test.sdPlugin");
+        tokio::fs::create_dir(&plugin_src).await.unwrap();
+        tokio::fs::write(
+            plugin_src.join("manifest.json"),
+            br#"{"Version":"1.0.1"}"#,
+        ).await.unwrap();
+        tokio::fs::write(plugin_src.join("code.js"), b"NEW").await.unwrap();
+
+        let plugin_dst = dst.path().join("com.test.sdPlugin");
+        tokio::fs::create_dir(&plugin_dst).await.unwrap();
+        tokio::fs::write(
+            plugin_dst.join("manifest.json"),
+            br#"{"Version":"1.0.0"}"#,
+        ).await.unwrap();
+        tokio::fs::write(plugin_dst.join("code.js"), b"OLD").await.unwrap();
+        tokio::fs::write(plugin_dst.join("stale.txt"), b"removeme").await.unwrap();
+
+        copy_builtin_plugins(src.path(), dst.path()).await.unwrap();
+
+        let manifest = tokio::fs::read_to_string(plugin_dst.join("manifest.json")).await.unwrap();
+        assert!(manifest.contains("1.0.1"));
+        let code = tokio::fs::read_to_string(plugin_dst.join("code.js")).await.unwrap();
+        assert_eq!(code, "NEW");
+        assert!(!plugin_dst.join("stale.txt").exists(), "stale file must be removed");
+    }
+
+    #[tokio::test]
+    async fn copy_builtin_plugins_skips_when_version_matches() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+
+        let plugin_src = src.path().join("com.test.sdPlugin");
+        tokio::fs::create_dir(&plugin_src).await.unwrap();
+        tokio::fs::write(
+            plugin_src.join("manifest.json"),
+            br#"{"Version":"1.0.0"}"#,
+        ).await.unwrap();
+        tokio::fs::write(plugin_src.join("code.js"), b"NEW").await.unwrap();
+
+        let plugin_dst = dst.path().join("com.test.sdPlugin");
+        tokio::fs::create_dir(&plugin_dst).await.unwrap();
+        tokio::fs::write(
+            plugin_dst.join("manifest.json"),
+            br#"{"Version":"1.0.0"}"#,
+        ).await.unwrap();
+        tokio::fs::write(plugin_dst.join("code.js"), b"OLD").await.unwrap();
+
+        copy_builtin_plugins(src.path(), dst.path()).await.unwrap();
+
+        let code = tokio::fs::read_to_string(plugin_dst.join("code.js")).await.unwrap();
+        assert_eq!(code, "OLD", "matching version must not overwrite");
     }
 }

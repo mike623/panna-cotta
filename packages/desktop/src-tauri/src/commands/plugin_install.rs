@@ -256,7 +256,7 @@ async fn hot_load_plugin(
 
     let mut host = state.plugin_host.lock().await;
     let code_path = new_plugin.plugin_dir.join(&new_plugin.manifest.code_path);
-    if let Err(e) = host.spawn_plugin(uuid, &node_binary, &code_path, port).await {
+    if let Err(e) = host.spawn_plugin(uuid, &node_binary, &code_path, &new_plugin.plugin_dir, port).await {
         tracing::error!(uuid=%uuid, error=%e, "hot_load: spawn failed");
     }
 }

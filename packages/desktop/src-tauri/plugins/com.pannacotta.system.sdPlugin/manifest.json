@@ -1,6 +1,6 @@
 {
   "Name": "System Actions",
-  "Version": "1.0.0",
+  "Version": "1.0.1",
   "Author": "Panna Cotta",
   "Description": "Built-in system actions: open apps, volume, brightness, sleep, lock, run commands",
   "UUID": "com.pannacotta.system",
