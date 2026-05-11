@@ -34,6 +34,9 @@ export const executeCommand = (action: string, target: string) =>
 export const openApp = (appName: string) =>
   invoke<void>('open_app', { appName })
 
+export const listInstalledApps = () =>
+  invoke<string[] | null>('list_installed_apps')
+
 export const openUrl = (url: string) =>
   invoke<void>('open_url', { url })
 

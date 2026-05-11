@@ -12,6 +12,38 @@ pub fn validate_url_scheme(url: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn list_installed_apps() -> Option<Vec<String>> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut dirs: Vec<std::path::PathBuf> = vec![
+            "/Applications".into(),
+            "/Applications/Utilities".into(),
+            "/System/Applications".into(),
+            "/System/Applications/Utilities".into(),
+        ];
+        if let Ok(home) = std::env::var("HOME") {
+            dirs.push(std::path::PathBuf::from(home).join("Applications"));
+        }
+        let mut apps = std::collections::BTreeSet::new();
+        for dir in &dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else { continue };
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if let Some(stripped) = name.strip_suffix(".app") {
+                        apps.insert(stripped.to_string());
+                    }
+                }
+            }
+        }
+        Some(apps.into_iter().collect())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+#[tauri::command]
 pub async fn open_app(app_name: String) -> Result<(), String> {
     let result = Command::new("open")
         .args(["-a", &app_name])
