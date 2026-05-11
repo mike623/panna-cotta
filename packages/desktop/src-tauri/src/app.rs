@@ -69,12 +69,7 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>> {
 
 pub fn run() {
     // ── Logging init ─────────────────────────────────────────────────────────
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    let log_dir = std::path::PathBuf::from(&home)
-        .join(".panna-cotta")
-        .join("logs");
+    let log_dir = crate::server::state::resolve_config_dir().join("logs");
     std::fs::create_dir_all(&log_dir).ok();
 
     let file_appender = rolling::daily(&log_dir, "panna-cotta.log");

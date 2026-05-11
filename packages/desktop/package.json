@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e-lan": "playwright test --config=e2e-lan/playwright.config.ts",
     "tauri": "tauri"
   },
   "dependencies": {

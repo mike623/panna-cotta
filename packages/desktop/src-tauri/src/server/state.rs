@@ -136,6 +136,24 @@ pub struct AppState {
     pub app_handle: Mutex<Option<tauri::AppHandle>>,
 }
 
+/// Resolve the on-disk config directory.
+///
+/// Honors the `PANNA_CONFIG_DIR` environment variable when it is set and
+/// non-empty (used for E2E tests, sandboxed runs, and custom installs).
+/// Otherwise falls back to `$HOME/.panna-cotta` (or `$USERPROFILE` on
+/// Windows, or `./.panna-cotta` if neither is set).
+pub fn resolve_config_dir() -> PathBuf {
+    if let Ok(override_dir) = std::env::var("PANNA_CONFIG_DIR") {
+        if !override_dir.is_empty() {
+            return PathBuf::from(override_dir);
+        }
+    }
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".panna-cotta")
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
@@ -144,12 +162,9 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".to_string());
         let bytes: [u8; 32] = OsRng.gen();
         let csrf_token: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-        let config_dir = PathBuf::from(home).join(".panna-cotta");
+        let config_dir = resolve_config_dir();
         let plugin_render = Arc::new(Mutex::new(PluginRenderState::default()));
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
@@ -1133,5 +1148,112 @@ action = "Calculator"
         assert_eq!(safe_profile_name("../../etc/passwd"), "etcpasswd");
         assert_eq!(safe_profile_name("\0null\0"), "null");
         assert_eq!(safe_profile_name("a/b"), "ab");
+    }
+
+    // ── PANNA_CONFIG_DIR env override tests ──────────────────────────────
+    //
+    // env vars are process-global. Use a serial mutex so concurrent test
+    // threads don't observe each other's mutations. Each test snapshots the
+    // existing value and restores it on drop, regardless of panic.
+
+    use std::sync::Mutex as StdMutex;
+    static ENV_LOCK: StdMutex<()> = StdMutex::new(());
+
+    /// RAII guard that captures `PANNA_CONFIG_DIR` on construction and restores
+    /// it on drop. Holding it serializes env-touching tests.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn acquire() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            let prev = std::env::var("PANNA_CONFIG_DIR").ok();
+            // SAFETY: serialized via ENV_LOCK; restored in Drop.
+            unsafe { std::env::remove_var("PANNA_CONFIG_DIR"); }
+            Self { _lock: lock, prev }
+        }
+
+        fn set(&self, value: &str) {
+            // SAFETY: serialized via the lock held by this guard.
+            unsafe { std::env::set_var("PANNA_CONFIG_DIR", value); }
+        }
+
+        fn unset(&self) {
+            // SAFETY: serialized via the lock held by this guard.
+            unsafe { std::env::remove_var("PANNA_CONFIG_DIR"); }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            // SAFETY: serialized via the lock held by this guard until Drop.
+            unsafe {
+                match &self.prev {
+                    Some(v) => std::env::set_var("PANNA_CONFIG_DIR", v),
+                    None => std::env::remove_var("PANNA_CONFIG_DIR"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_config_dir_default_when_env_unset() {
+        let guard = EnvGuard::acquire();
+        guard.unset();
+        let dir = resolve_config_dir();
+        // Whatever HOME resolves to in the test env, it should end with .panna-cotta
+        assert!(
+            dir.file_name().and_then(|s| s.to_str()) == Some(".panna-cotta"),
+            "expected dir ending in .panna-cotta, got {:?}",
+            dir
+        );
+    }
+
+    #[test]
+    fn resolve_config_dir_uses_env_when_set() {
+        let guard = EnvGuard::acquire();
+        guard.set("/tmp/panna-test-xyz-abcdef");
+        let dir = resolve_config_dir();
+        assert_eq!(dir, PathBuf::from("/tmp/panna-test-xyz-abcdef"));
+    }
+
+    #[test]
+    fn resolve_config_dir_falls_back_when_env_empty() {
+        let guard = EnvGuard::acquire();
+        guard.set("");
+        let dir = resolve_config_dir();
+        // Empty env var → fall back to home-based default
+        assert!(
+            dir.file_name().and_then(|s| s.to_str()) == Some(".panna-cotta"),
+            "expected dir ending in .panna-cotta, got {:?}",
+            dir
+        );
+    }
+
+    #[test]
+    fn app_state_new_respects_env_override() {
+        let guard = EnvGuard::acquire();
+        let tmp = tempfile::tempdir().unwrap();
+        guard.set(tmp.path().to_str().unwrap());
+        let state = AppState::new();
+        assert_eq!(state.config_dir, tmp.path());
+        // profile/active-profile paths derive from config_dir
+        assert_eq!(state.profiles_dir(), tmp.path().join("profiles"));
+        assert_eq!(state.active_profile_file(), tmp.path().join("active-profile"));
+        assert_eq!(state.legacy_config_file(), tmp.path().join("stream-deck.config.toml"));
+    }
+
+    #[test]
+    fn app_state_new_default_when_env_unset() {
+        let guard = EnvGuard::acquire();
+        guard.unset();
+        let state = AppState::new();
+        // Should NOT be an arbitrary tmp dir — must end with .panna-cotta
+        assert_eq!(
+            state.config_dir.file_name().and_then(|s| s.to_str()),
+            Some(".panna-cotta")
+        );
     }
 }
