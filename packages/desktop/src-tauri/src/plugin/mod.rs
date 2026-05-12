@@ -157,7 +157,7 @@ impl PluginHost {
         #[cfg(unix)]
         let pgid = child.id();
         #[cfg(not(unix))]
-        let pgid: Option<u32> = None;
+        let _pgid: Option<u32> = None;
 
         let mut ps = PluginState::new();
         ps.process = Some(child);
@@ -291,9 +291,9 @@ impl PluginHost {
     }
 }
 
-async fn kill_process(child: Option<Child>, pgid: Option<u32>) {
+async fn kill_process(child: Option<Child>, _pgid: Option<u32>) {
     #[cfg(unix)]
-    if let Some(g) = pgid {
+    if let Some(g) = _pgid {
         unsafe { libc::killpg(g as libc::pid_t, libc::SIGTERM); }
         tokio::time::sleep(Duration::from_secs(2)).await;
         unsafe { libc::killpg(g as libc::pid_t, libc::SIGKILL); }
