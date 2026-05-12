@@ -27,28 +27,44 @@ let connectionLost = false;
 let viewMode = localStorage.getItem("viewMode") || "grid";
 let pluginRender = { images: {}, titles: {}, states: {} };
 
+const HEALTH_PING_INTERVAL = 5000;
+const HEALTH_BACKOFF_MAX = 60000;
+const HEALTH_MAX_FAILURES = 6;
+let healthTimeoutId = null;
+let healthFailCount = 0;
+
 function getOrCreateBanner() {
   let banner = document.getElementById("connection-banner");
   if (!banner) {
     banner = document.createElement("div");
     banner.id = "connection-banner";
     banner.className = "connection-banner hidden";
-    banner.innerHTML = '<i data-lucide="wifi-off"></i><span>Backend disconnected — retrying…</span>';
     document.body.prepend(banner);
-    lucide.createIcons();
   }
   return banner;
 }
 
-function setConnectionState(online) {
-  if (online === !connectionLost) return;
-  connectionLost = !online;
+function updateBanner(state, secondsLeft) {
   const banner = getOrCreateBanner();
-  if (connectionLost) {
-    banner.classList.remove("hidden");
-  } else {
+  if (state === "online") {
     banner.classList.add("hidden");
+    connectionLost = false;
+    return;
   }
+  connectionLost = true;
+  if (state === "retrying") {
+    banner.innerHTML = `<i data-lucide="wifi-off"></i><span>Backend disconnected — retrying in ${secondsLeft}s</span>`;
+  } else {
+    banner.innerHTML = '<i data-lucide="wifi-off"></i><span>Backend disconnected</span><button class="banner-retry-btn">Retry</button>';
+    banner.querySelector(".banner-retry-btn").addEventListener("click", manualHealthRetry);
+  }
+  banner.classList.remove("hidden");
+  lucide.createIcons({ nodes: [banner] });
+}
+
+function manualHealthRetry() {
+  healthFailCount = 0;
+  scheduleHealthPing(0);
 }
 
 async function fetchPluginRender() {
@@ -62,16 +78,33 @@ async function fetchPluginRender() {
   }
 }
 
-function startHealthPing() {
-  setInterval(async () => {
-    try {
-      const ok = await api.ping();
-      setConnectionState(ok);
-    } catch {
-      setConnectionState(false);
-    }
+function scheduleHealthPing(delayMs) {
+  clearTimeout(healthTimeoutId);
+  healthTimeoutId = setTimeout(doHealthPing, delayMs);
+}
+
+async function doHealthPing() {
+  try {
+    const ok = await api.ping();
+    if (!ok) throw new Error();
+    healthFailCount = 0;
+    updateBanner("online");
     await fetchPluginRender();
-  }, 5000);
+    scheduleHealthPing(HEALTH_PING_INTERVAL);
+  } catch {
+    healthFailCount++;
+    if (healthFailCount >= HEALTH_MAX_FAILURES) {
+      updateBanner("gave-up");
+    } else {
+      const backoffMs = Math.min(HEALTH_PING_INTERVAL * Math.pow(2, healthFailCount - 1), HEALTH_BACKOFF_MAX);
+      updateBanner("retrying", Math.round(backoffMs / 1000));
+      scheduleHealthPing(backoffMs);
+    }
+  }
+}
+
+function startHealthPing() {
+  scheduleHealthPing(HEALTH_PING_INTERVAL);
 }
 
 function flashButton(button, className) {
@@ -342,7 +375,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (err) {
     console.error("Failed to load config:", err);
     document.getElementById("grid-container").innerHTML =
-      '<div class="error-state"><div><strong>Connection failed</strong>Is the backend running?</div></div>';
+      '<div class="error-state"><div><strong>Connection failed</strong><span>Is the backend running?</span><button class="retry-load-btn" onclick="location.reload()">Retry</button></div></div>';
     return;
   }
 
