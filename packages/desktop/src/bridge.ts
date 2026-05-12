@@ -95,14 +95,20 @@ export function profileToBackend(profile: ProfileData, pageId?: string): Backend
   const page = (pageId ? profile.pages.find(p => p.id === pageId) : null) || profile.pages[0]
   const total = profile.rows * profile.cols
   const buttons: BackendButton[] = []
+  const seen = new Set<string>()
   for (let i = 0; i < total; i++) {
     const slot = page?.slots[i]
     if (slot) {
+      let context = slot.context || genContext()
+      // Defensive dedup: if two slots somehow share a context, regenerate.
+      // Plugin events route by context; collisions cause cross-slot updates.
+      while (seen.has(context)) context = genContext()
+      seen.add(context)
       buttons.push({
         name: slot.label,
         icon: slot.iconOverride || findAction(slot.actionId)?.icon || '',
         actionUUID: ACTION_TO_UUID[slot.actionId] || `com.pannacotta.unknown.${slot.actionId}`,
-        context: slot.context || genContext(),
+        context,
         settings: slotToSettings(slot.actionId, slot.value),
       })
     } else {

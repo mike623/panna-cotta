@@ -9,7 +9,19 @@ use tauri::Emitter;
 
 const PORT_FILE_NAME: &str = ".panna-cotta.port";
 
+/// Path to the port-persistence file.
+///
+/// Production: lives at `$HOME/.panna-cotta.port` (legacy location, preserved
+/// for backward compatibility with existing installs).
+///
+/// Test/sandbox: when `PANNA_CONFIG_DIR` is set, lives inside the override
+/// directory so multiple instances don't clobber each other.
 fn port_file() -> std::path::PathBuf {
+    if let Ok(override_dir) = std::env::var("PANNA_CONFIG_DIR") {
+        if !override_dir.is_empty() {
+            return std::path::PathBuf::from(override_dir).join(PORT_FILE_NAME);
+        }
+    }
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
@@ -30,7 +42,11 @@ pub async fn resolve_port() -> Result<u16, String> {
     }
     for p in 30000u16..40000 {
         if is_port_free(p).await {
-            tokio::fs::write(port_file(), p.to_string())
+            let pf = port_file();
+            if let Some(parent) = pf.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            tokio::fs::write(&pf, p.to_string())
                 .await
                 .map_err(|e| e.to_string())?;
             return Ok(p);
@@ -49,6 +65,21 @@ pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
         .map_err(|e| e.to_string())?;
 
     *state.port.lock().map_err(|e| e.to_string())? = Some(port);
+
+    // E2E test hook: when PANNA_CONFIG_DIR is set, write the CSRF token to a
+    // file inside the override dir so test harnesses can authenticate.
+    // Production (no override) never writes this file.
+    if let Ok(override_dir) = std::env::var("PANNA_CONFIG_DIR") {
+        if !override_dir.is_empty() {
+            let token_path = std::path::PathBuf::from(&override_dir).join(".csrf-token");
+            if let Some(parent) = token_path.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            if let Err(e) = tokio::fs::write(&token_path, &state.csrf_token).await {
+                tracing::warn!(error = %e, "failed to write .csrf-token");
+            }
+        }
+    }
 
     tracing::info!(port, "server bound");
 

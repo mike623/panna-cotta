@@ -214,9 +214,12 @@ async fn create_profile_handler(
     if name.is_empty() {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "name required"}))).into_response();
     }
+    // Return the sanitized name (what the file is actually named on disk)
+    // so the client can refer to the profile in subsequent requests.
+    let canonical = crate::server::state::safe_profile_name(&name);
     match create_profile(&state, &name, None).await {
         Ok(_) => match activate_profile(&state, &name).await {
-            Ok(_) => Json(json!({"ok": true, "name": name})).into_response(),
+            Ok(_) => Json(json!({"ok": true, "name": canonical})).into_response(),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
         },
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
@@ -1110,6 +1113,435 @@ mod tests {
         assert!(json["images"].is_object());
         assert!(json["titles"].is_object());
         assert!(json["states"].is_object());
+    }
+
+    // ── GET /api/config — full button list contract ──────────────────────
+    //
+    // Documents the on-the-wire contract: GET /api/config does NOT filter
+    // out buttons with lanAllowed: false. It only redacts the `settings`
+    // field when there is no CSRF (LAN clients). The enforcement of
+    // lanAllowed happens at EXECUTE time (see execute_lan_allowed_false_returns_403).
+
+    #[tokio::test]
+    async fn get_config_returns_lan_allowed_false_buttons_with_settings_redacted() {
+        let buttons = vec![
+            crate::server::state::Button {
+                name: "Public".into(),
+                icon: "a".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "pub1".into(),
+                settings: serde_json::json!({"appName": "Calculator"}),
+                lan_allowed: Some(true),
+            },
+            crate::server::state::Button {
+                name: "Private".into(),
+                icon: "b".into(),
+                action_uuid: "com.pannacotta.system.open-app".into(),
+                context: "priv1".into(),
+                settings: serde_json::json!({"appName": "Terminal"}),
+                lan_allowed: Some(false),
+            },
+        ];
+        let state = state_with_profile("tok", buttons).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/config")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let buttons = json["buttons"].as_array().unwrap();
+        assert_eq!(buttons.len(), 2, "all buttons listed regardless of lanAllowed");
+        // Settings stripped for both (LAN, no CSRF)
+        for b in buttons {
+            assert!(b["settings"].is_null(), "settings must be redacted on LAN");
+        }
+        // Context still present so phone can call /api/execute by context
+        assert!(buttons.iter().any(|b| b["context"] == "pub1"));
+        assert!(buttons.iter().any(|b| b["context"] == "priv1"));
+    }
+
+    // ── /api/execute CSRF behavior on localhost ──────────────────────────
+
+    #[tokio::test]
+    async fn execute_from_localhost_without_csrf_returns_403() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Vol".into(),
+            icon: "v".into(),
+            action_uuid: "com.pannacotta.system.volume-up".into(),
+            context: "vol1".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("the_real_token", buttons).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"context":"vol1"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn execute_from_localhost_with_wrong_csrf_returns_403() {
+        let buttons = vec![crate::server::state::Button {
+            name: "Vol".into(),
+            icon: "v".into(),
+            action_uuid: "com.pannacotta.system.volume-up".into(),
+            context: "vol1".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("correct_token", buttons).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "wrong")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"context":"vol1"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn execute_from_localhost_with_valid_csrf_passes_auth() {
+        // 200 if a plugin is running, or 503 if no plugin registered.
+        // Both prove auth passed (not 403, not 400).
+        let buttons = vec![crate::server::state::Button {
+            name: "Vol".into(),
+            icon: "v".into(),
+            action_uuid: "com.pannacotta.system.volume-up".into(),
+            context: "vol1".into(),
+            settings: serde_json::json!({}),
+            lan_allowed: None,
+        }];
+        let state = state_with_profile("good_token", buttons).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "good_token")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"context":"vol1"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert!(
+            res.status() != 403 && res.status() != 400,
+            "auth should pass, got {}",
+            res.status()
+        );
+    }
+
+    // ── Profile creation: invalid names ──────────────────────────────────
+
+    #[tokio::test]
+    async fn create_profile_empty_name_returns_400() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/profiles")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"name":""}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn create_profile_whitespace_only_name_returns_400() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/profiles")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"name":"   "}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn create_profile_path_traversal_sanitized_to_safe_name() {
+        // safe_profile_name strips '/' and other special chars, so
+        // "../etc/passwd" becomes "etcpasswd" — no filesystem escape.
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/profiles")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"name":"../etc/passwd"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        // The request succeeds because safe_profile_name sanitizes; the
+        // resulting profile lives at <profiles_dir>/etcpasswd.json — INSIDE
+        // the profiles_dir, NOT at /etc/passwd.
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let returned_name = json["name"].as_str().unwrap();
+        assert!(
+            !returned_name.contains('/') && !returned_name.contains(".."),
+            "returned name '{returned_name}' must not contain slashes or dots"
+        );
+        // And nothing was written outside profiles_dir
+        assert!(
+            !std::path::Path::new("/etc/passwd.json").exists(),
+            "must NOT escape filesystem"
+        );
+        let created = state.profiles_dir().join(format!("{returned_name}.json"));
+        assert!(created.exists(), "profile must live inside profiles_dir");
+    }
+
+    #[tokio::test]
+    async fn create_profile_null_byte_in_name_sanitized() {
+        // safe_profile_name strips non-alphanumeric chars (except space/_/-)
+        // so null bytes are removed.
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state.clone());
+        // "Work\0Evil" — name contains \0 which would be a path-injection
+        // primitive in many systems. safe_profile_name must strip it.
+        let body_json = serde_json::json!({"name": "Work\u{0}Evil"});
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/profiles")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(body_json.to_string()))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // Returned name preserves spaces but the on-disk file uses
+        // safe_profile_name. The endpoint returns the trimmed input name
+        // (which still contains the null byte literally in JSON), so we
+        // assert the on-disk side: a file exists at the safe name.
+        let name = json["name"].as_str().unwrap();
+        let safe = crate::server::state::safe_profile_name(name);
+        let path = state.profiles_dir().join(format!("{safe}.json"));
+        assert!(path.exists(), "profile file must exist at safe path");
+        assert!(!safe.contains('\0'), "safe name must not contain null byte");
+    }
+
+    #[tokio::test]
+    async fn rename_profile_via_route_atomically_renames() {
+        // PATCH /api/profiles/:name — old file gone, new file has same
+        // contents.
+        let state = state_with_profile("tok", vec![]).await;
+
+        // Pre-seed a profile to rename
+        crate::server::state::create_profile(&state, "Work", None)
+            .await
+            .unwrap();
+        let before = tokio::fs::read_to_string(
+            crate::server::state::profile_json_path(&state, "Work"),
+        )
+        .await
+        .unwrap();
+
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/api/profiles/Work")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"newName":"Personal"}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+
+        let work_path = crate::server::state::profile_json_path(&state, "Work");
+        let personal_path =
+            crate::server::state::profile_json_path(&state, "Personal");
+        assert!(!work_path.exists(), "old profile file must be gone");
+        assert!(personal_path.exists(), "new profile file must exist");
+        let after = tokio::fs::read_to_string(&personal_path).await.unwrap();
+        assert_eq!(before, after, "contents preserved byte-for-byte");
+    }
+
+    #[tokio::test]
+    async fn rename_profile_empty_new_name_returns_400() {
+        let state = state_with_profile("tok", vec![]).await;
+        crate::server::state::create_profile(&state, "Work", None)
+            .await
+            .unwrap();
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("PATCH")
+            .uri("/api/profiles/Work")
+            .header("Content-Type", "application/json")
+            .header("X-Panna-CSRF", "tok")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::from(r#"{"newName":""}"#))
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 400);
+    }
+
+    // ── Default config + list profiles routes ────────────────────────────
+
+    #[tokio::test]
+    async fn get_default_config_returns_default_structure() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/config/default")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["grid"]["rows"].is_number());
+        assert!(json["grid"]["cols"].is_number());
+        assert!(json["buttons"].is_array());
+    }
+
+    #[tokio::test]
+    async fn list_profiles_returns_at_least_default() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/profiles")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json.is_array());
+        assert!(json.as_array().unwrap().iter().any(|p| p["name"] == "Default"));
+    }
+
+    // ── PI route success path: serves HTML + injects bridge ──────────────
+
+    async fn state_with_plugin_dir(
+        csrf: &str,
+        plugin_uuid: &str,
+        files: &[(&str, &str)],
+    ) -> (Arc<AppState>, tempfile::TempDir) {
+        let plugin_dir = tempfile::tempdir().unwrap();
+        for (name, content) in files {
+            let p = plugin_dir.path().join(name);
+            if let Some(parent) = p.parent() {
+                tokio::fs::create_dir_all(parent).await.unwrap();
+            }
+            tokio::fs::write(&p, content).await.unwrap();
+        }
+        let state = make_state(csrf);
+        {
+            let mut host = state.plugin_host.lock().await;
+            host.plugin_dirs
+                .insert(plugin_uuid.to_string(), plugin_dir.path().to_path_buf());
+        }
+        (state, plugin_dir)
+    }
+
+    #[tokio::test]
+    async fn pi_route_serves_html_and_injects_bridge_script() {
+        let (state, _dir) = state_with_plugin_dir(
+            "tok",
+            "com.test.plugin",
+            &[("pi/index.html", "<html><body><h1>PI</h1></body></html>")],
+        )
+        .await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.test.plugin/pi/index.html")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let ct = res
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(ct.contains("text/html"), "got content-type: {ct}");
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let html = String::from_utf8_lossy(&body);
+        assert!(html.contains("<h1>PI</h1>"), "original content preserved");
+        assert!(
+            html.contains("connectElgatoStreamDeckSocket"),
+            "bridge script injected"
+        );
+        assert!(html.contains("PI_TOKEN"));
+    }
+
+    #[tokio::test]
+    async fn pi_route_serves_non_html_without_bridge() {
+        let (state, _dir) = state_with_plugin_dir(
+            "tok",
+            "com.test.plugin",
+            &[("style.css", "body{color:red}")],
+        )
+        .await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.test.plugin/style.css")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let s = String::from_utf8_lossy(&body);
+        assert_eq!(s, "body{color:red}", "binary/non-html served verbatim");
+    }
+
+    #[tokio::test]
+    async fn pi_route_stores_token_in_pi_token_map_on_html() {
+        let (state, _dir) = state_with_plugin_dir(
+            "tok",
+            "com.test.plugin",
+            &[("pi/index.html", "<html><body></body></html>")],
+        )
+        .await;
+        let app = create_router(state.clone());
+        let req = Request::builder()
+            .method("GET")
+            .uri("/pi/com.test.plugin/pi/index.html")
+            .extension(axum::extract::ConnectInfo(local_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), 200);
+        // After response, pi_token_map should have at least one entry pointing to our plugin.
+        let host = state.plugin_host.lock().await;
+        assert!(
+            host.pi_token_map.values().any(|u| u == "com.test.plugin"),
+            "PI token must be registered after HTML serve"
+        );
     }
 }
 

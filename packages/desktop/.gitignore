@@ -3,3 +3,9 @@ node_modules/
 src-tauri/binaries/
 src-tauri/frontend/
 src-tauri/stream-deck.config.toml
+
+# Playwright artifacts
+test-results/
+playwright-report/
+.playwright/
+playwright/.cache/

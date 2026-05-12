@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e-lan": "playwright test --config=e2e-lan/playwright.config.ts",
+    "smoke": "cd smoke && npm install --no-audit --no-fund && npx wdio run wdio.conf.ts",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -18,10 +21,15 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.1.1",
     "vite": "^5.0.0",
     "vitest": "^4.1.5"
   }

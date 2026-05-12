@@ -288,6 +288,21 @@ describe('profileToBackend', () => {
     expect(cfg.buttons[0].actionUUID).toBe('com.pannacotta.unknown.custom-future-action')
   })
 
+  it('regenerates duplicate contexts to avoid collisions', () => {
+    // Regression: onInspectorDuplicate (pre-fix) shallow-cloned slots
+    // including context. Two slots sharing context caused plugin events to
+    // apply to both and FLIP tile keys to collide.
+    const profile = makeProfile({
+      0: { actionId: 'open-app', label: '', value: '1Password', iconOverride: 'app', context: 'DUP' },
+      3: { actionId: 'open-app', label: 'X', value: '1Password', iconOverride: 'app', context: 'DUP' },
+    })
+    const cfg = profileToBackend(profile)
+    const ctxs = cfg.buttons
+      .filter(b => b.actionUUID !== 'com.pannacotta.empty')
+      .map(b => b.context)
+    expect(new Set(ctxs).size).toBe(ctxs.length)
+  })
+
   it('uses specified pageId when provided', () => {
     const profile: ProfileData = {
       id: 'T', name: 'T', icon: 'home', rows: 1, cols: 1,

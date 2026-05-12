@@ -17,6 +17,7 @@ import type { BackendConfig, BackendProfile } from './bridge'
 import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
 import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
 import { Icon } from './icons'
+import { useHistory } from './lib/useHistory'
 
 // ── Tauri bridge types ───────────────────────────────────────────────────────
 interface ServerInfo {
@@ -73,29 +74,21 @@ export function PannaApp() {
   }
   const theme = makeTheme(tweaks)
 
-  // Undo/redo history
-  const [history, setHistory] = useState<AppSnapshot[]>(() => [{
+  // Undo/redo history (extracted into a hook so it can be unit-tested)
+  const {
+    state,
+    hIdx,
+    commit,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    reset: resetHistory,
+  } = useHistory<AppSnapshot>({
     profiles: makeInitialProfiles(),
     activeProfileId: 'Default',
     activePageId: 'p1',
-  }])
-  const [hIdx, setHIdx] = useState(0)
-  const state = history[hIdx]
-
-  const commit = useCallback((nextOrFn: AppSnapshot | ((cur: AppSnapshot) => AppSnapshot)) => {
-    setHistory(h => {
-      const cur = h[hIdx]
-      const next = typeof nextOrFn === 'function' ? nextOrFn(cur) : nextOrFn
-      const trimmed = h.slice(0, hIdx + 1)
-      return [...trimmed, next].slice(-50)
-    })
-    setHIdx(i => Math.min(i + 1, 49))
-  }, [hIdx])
-
-  const canUndo = hIdx > 0
-  const canRedo = hIdx < history.length - 1
-  const undo = () => canUndo && setHIdx(i => i - 1)
-  const redo = () => canRedo && setHIdx(i => i + 1)
+  })
 
   // UI state
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
@@ -154,8 +147,7 @@ export function PannaApp() {
           activeProfileId: activeBackend,
           activePageId: 'p1',
         }
-        setHistory([initialState])
-        setHIdx(0)
+        resetHistory(initialState)
       } catch (err) {
         console.warn('Tauri not available, using defaults:', err)
       } finally {
@@ -240,7 +232,12 @@ export function PannaApp() {
       let next = -1
       for (let i = 0; i < total; i++) if (!pg.slots[i]) { next = i; break }
       if (next < 0) return pg
-      return { ...pg, slots: { ...pg.slots, [next]: { ...pg.slots[selectedSlot] } } }
+      const src = pg.slots[selectedSlot]
+      if (!src) return pg
+      // Strip context so profileToBackend assigns a fresh one; duplicates must
+      // not share context with their source or plugin events apply to both.
+      const { context: _drop, ...clone } = src
+      return { ...pg, slots: { ...pg.slots, [next]: clone } }
     })
   }
 
@@ -357,15 +354,25 @@ export function PannaApp() {
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable
+
+      // Escape always dismisses — cancel/close expected to work even while typing.
+      if (e.key === 'Escape') {
+        setCmdOpen(false); setConnectOpen(false); setShortcutsOpen(false)
+        setSelectedSlot(null); setRightView('palette')
+        return
+      }
+
+      // All other shortcuts are suppressed when a text field has focus so that
+      // typing characters or using browser-native Cmd+Z for text editing works.
+      if (inInput) return
+
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key === 'k') { e.preventDefault(); setCmdOpen(v => !v) }
       else if (meta && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if (meta && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
       else if (e.key === '?') { setShortcutsOpen(v => !v) }
-      else if (e.key === 'Escape') {
-        setCmdOpen(false); setConnectOpen(false); setShortcutsOpen(false)
-        setSelectedSlot(null); setRightView('palette')
-      }
       else if (selectedSlot != null && e.key === 'Delete') onInspectorClear()
       else if (/^[1-9]$/.test(e.key)) {
         const i = parseInt(e.key, 10) - 1

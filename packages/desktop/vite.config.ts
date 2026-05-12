@@ -13,6 +13,12 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['./src/__tests__/setup.ts'],
+    globals: true,
+    // Vitest covers component/unit tests under src/. Playwright covers
+    // browser-level specs under e2e/ and must not be discovered by Vitest.
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    exclude: ['e2e/**', 'e2e-lan/**', 'node_modules/**', 'dist/**', 'src-tauri/**'],
   },
 })
