@@ -354,15 +354,25 @@ export function PannaApp() {
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable
+
+      // Escape always dismisses — cancel/close expected to work even while typing.
+      if (e.key === 'Escape') {
+        setCmdOpen(false); setConnectOpen(false); setShortcutsOpen(false)
+        setSelectedSlot(null); setRightView('palette')
+        return
+      }
+
+      // All other shortcuts are suppressed when a text field has focus so that
+      // typing characters or using browser-native Cmd+Z for text editing works.
+      if (inInput) return
+
       const meta = e.metaKey || e.ctrlKey
       if (meta && e.key === 'k') { e.preventDefault(); setCmdOpen(v => !v) }
       else if (meta && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
       else if (meta && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
       else if (e.key === '?') { setShortcutsOpen(v => !v) }
-      else if (e.key === 'Escape') {
-        setCmdOpen(false); setConnectOpen(false); setShortcutsOpen(false)
-        setSelectedSlot(null); setRightView('palette')
-      }
       else if (selectedSlot != null && e.key === 'Delete') onInspectorClear()
       else if (/^[1-9]$/.test(e.key)) {
         const i = parseInt(e.key, 10) - 1

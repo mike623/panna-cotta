@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry,
 };
@@ -64,7 +64,20 @@ fn build_app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<Wry>> {
     let app_submenu = SubmenuBuilder::new(app, "Panna Cotta")
         .item(&check_updates)
         .build()?;
-    MenuBuilder::new(app).item(&app_submenu).build()
+
+    // Standard Edit submenu — required on macOS for WKWebView to receive
+    // Cmd+C/V/X/A/Z/Shift+Z via the OS responder chain.
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .item(&PredefinedMenuItem::undo(app, None)?)
+        .item(&PredefinedMenuItem::redo(app, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(app, None)?)
+        .item(&PredefinedMenuItem::copy(app, None)?)
+        .item(&PredefinedMenuItem::paste(app, None)?)
+        .item(&PredefinedMenuItem::select_all(app, None)?)
+        .build()?;
+
+    MenuBuilder::new(app).item(&app_submenu).item(&edit_submenu).build()
 }
 
 pub fn run() {
