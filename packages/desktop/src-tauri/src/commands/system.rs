@@ -79,8 +79,8 @@ pub async fn type_text(text: String) -> Result<(), String> {
         if text.is_empty() {
             return Ok(());
         }
-        // Escape double quotes for AppleScript string literal
-        let escaped = text.replace('"', "\\\"");
+        // Escape backslashes and double quotes for AppleScript string literal
+        let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
         let output = std::process::Command::new("osascript")
             .args(["-e", &format!("tell application \"System Events\" to keystroke \"{}\"", escaped)])
             .output()
@@ -105,8 +105,9 @@ pub async fn set_clipboard(text: String) -> Result<(), String> {
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
-        if let Some(stdin) = child.stdin.as_mut() {
+        if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            // stdin dropped here, EOF sent, pbcopy can proceed
         }
         child.wait().map(|_| ()).map_err(|e| e.to_string())
     }
