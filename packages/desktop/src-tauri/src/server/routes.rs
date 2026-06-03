@@ -281,6 +281,8 @@ async fn delete_profile_handler(
 #[derive(serde::Deserialize)]
 struct ExecuteBody {
     context: Option<String>,
+    action: Option<String>,
+    text: Option<String>,
 }
 
 async fn execute_handler(
@@ -300,6 +302,27 @@ async fn execute_handler(
         if !csrf_ok {
             return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "CSRF required"}))).into_response();
         }
+    }
+
+    // Action-based dispatch (type / clipboard) — no button context needed
+    if let Some(action) = &body.action {
+        return match action.as_str() {
+            "type" => {
+                let text = body.text.clone().unwrap_or_default();
+                match crate::commands::system::type_text(text).await {
+                    Ok(()) => Json(serde_json::json!({"success": true})).into_response(),
+                    Err(e) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response(),
+                }
+            }
+            "clipboard" => {
+                let text = body.text.clone().unwrap_or_default();
+                match crate::commands::system::set_clipboard(text).await {
+                    Ok(()) => Json(serde_json::json!({"success": true})).into_response(),
+                    Err(e) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response(),
+                }
+            }
+            other => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": format!("unknown action: {other}")}))).into_response(),
+        };
     }
 
     if let Some(ctx) = body.context {
@@ -1542,6 +1565,41 @@ mod tests {
             host.pi_token_map.values().any(|u| u == "com.test.plugin"),
             "PI token must be registered after HTML serve"
         );
+    }
+
+    #[tokio::test]
+    async fn execute_type_text_from_lan() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("content-type", "application/json")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::from(r#"{"action":"type","text":"lo"}"#))
+            .unwrap();
+        // type action can't run in CI (no keyboard/osascript), but must NOT return 400.
+        let resp = app.oneshot(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "type action shape should be accepted");
+    }
+
+    #[tokio::test]
+    async fn execute_clipboard_from_lan() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("content-type", "application/json")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::from(r#"{"action":"clipboard","text":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "clipboard action shape should be accepted");
     }
 }
 
