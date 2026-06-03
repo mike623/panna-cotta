@@ -7,6 +7,10 @@ pub struct WordBuffer {
     chars: Vec<char>,
 }
 
+impl Default for WordBuffer {
+    fn default() -> Self { Self::new() }
+}
+
 impl WordBuffer {
     pub fn new() -> Self { Self { chars: Vec::new() } }
 

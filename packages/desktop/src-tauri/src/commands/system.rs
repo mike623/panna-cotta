@@ -92,7 +92,10 @@ pub async fn type_text(text: String) -> Result<(), String> {
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
-    Err("type_text only supported on macOS".into())
+    {
+        let _ = text;
+        Err("type_text only supported on macOS".into())
+    }
 }
 
 #[tauri::command]
@@ -112,7 +115,10 @@ pub async fn set_clipboard(text: String) -> Result<(), String> {
         child.wait().map(|_| ()).map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
-    Err("set_clipboard only supported on macOS".into())
+    {
+        let _ = text;
+        Err("set_clipboard only supported on macOS".into())
+    }
 }
 
 #[tauri::command]

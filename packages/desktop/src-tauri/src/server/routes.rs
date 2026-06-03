@@ -646,7 +646,7 @@ window.connectElgatoStreamDeckSocket = function(inPort, inUUID, inRegisterEvent,
 async fn autocomplete_sse_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let mut rx = state.autocomplete.subscribe();
+    let rx = state.autocomplete.subscribe();
     // Send current value immediately on connect
     let initial = rx.borrow().clone();
     let initial_json = serde_json::to_string(&serde_json::json!({"words": initial}))

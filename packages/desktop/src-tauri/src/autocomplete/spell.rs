@@ -44,6 +44,7 @@ pub fn get_completions(partial: &str, count: usize) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_completions_for_hel() {
         let results = get_completions("hel", 5);
