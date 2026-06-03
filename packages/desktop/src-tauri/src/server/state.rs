@@ -134,6 +134,7 @@ pub struct AppState {
     pub plugin_host: Arc<tokio::sync::Mutex<crate::plugin::PluginHost>>,
     pub plugin_render: Arc<Mutex<PluginRenderState>>,
     pub app_handle: Mutex<Option<tauri::AppHandle>>,
+    pub autocomplete: Arc<crate::autocomplete::state::AutocompleteState>,
 }
 
 /// Resolve the on-disk config directory.
@@ -169,6 +170,8 @@ impl AppState {
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
         ));
+        let autocomplete_config = crate::autocomplete::state::AutocompleteConfig::default();
+        let autocomplete = Arc::new(crate::autocomplete::state::AutocompleteState::new(autocomplete_config));
         Self {
             config_dir,
             port: Mutex::new(None),
@@ -176,6 +179,7 @@ impl AppState {
             plugin_host,
             plugin_render,
             app_handle: Mutex::new(None),
+            autocomplete,
         }
     }
 
@@ -530,6 +534,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: std::sync::Mutex::new(None),
+            autocomplete: Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         };
         (state, dir)
     }

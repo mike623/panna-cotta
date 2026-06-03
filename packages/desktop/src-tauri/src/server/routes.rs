@@ -3,13 +3,15 @@ use axum::{
     extract::{ConnectInfo, Path, State},
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Json, Redirect, Response},
+    response::{sse::{Event, Sse}, IntoResponse, Json, Redirect, Response},
     routing::{get, patch, post, put},
     Router,
 };
+use futures_util::{stream, Stream};
 use include_dir::{include_dir, Dir};
 use serde::Deserialize;
 use serde_json::json;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -90,6 +92,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins", get(list_plugins_handler))
         .route("/api/plugins/:uuid/status", get(plugin_status_handler))
         .route("/api/plugin-render", get(get_plugin_render_handler))
+        .route("/api/autocomplete", get(autocomplete_sse_handler))
         .route("/pi/:uuid/*path", get(serve_pi_file))
         .merge(admin)
         .with_state(state)
@@ -281,6 +284,8 @@ async fn delete_profile_handler(
 #[derive(serde::Deserialize)]
 struct ExecuteBody {
     context: Option<String>,
+    action: Option<String>,
+    text: Option<String>,
 }
 
 async fn execute_handler(
@@ -300,6 +305,27 @@ async fn execute_handler(
         if !csrf_ok {
             return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "CSRF required"}))).into_response();
         }
+    }
+
+    // Action-based dispatch (type / clipboard) — no button context needed
+    if let Some(action) = &body.action {
+        return match action.as_str() {
+            "type" => {
+                let text = body.text.clone().unwrap_or_default();
+                match crate::commands::system::type_text(text).await {
+                    Ok(()) => Json(serde_json::json!({"success": true})).into_response(),
+                    Err(e) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response(),
+                }
+            }
+            "clipboard" => {
+                let text = body.text.clone().unwrap_or_default();
+                match crate::commands::system::set_clipboard(text).await {
+                    Ok(()) => Json(serde_json::json!({"success": true})).into_response(),
+                    Err(e) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": e}))).into_response(),
+                }
+            }
+            other => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": format!("unknown action: {other}")}))).into_response(),
+        };
     }
 
     if let Some(ctx) = body.context {
@@ -617,6 +643,29 @@ window.connectElgatoStreamDeckSocket = function(inPort, inUUID, inRegisterEvent,
     ).into_response()
 }
 
+async fn autocomplete_sse_handler(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.autocomplete.subscribe();
+    // Send current value immediately on connect
+    let initial = rx.borrow().clone();
+    let initial_json = serde_json::to_string(&serde_json::json!({"words": initial}))
+        .unwrap_or_default();
+
+    let stream = stream::unfold((rx, Some(initial_json)), |(mut rx, pending)| async move {
+        if let Some(data) = pending {
+            return Some((Ok(Event::default().data(data)), (rx, None)));
+        }
+        rx.changed().await.ok()?;
+        let words = rx.borrow_and_update().clone();
+        let json = serde_json::to_string(&serde_json::json!({"words": words}))
+            .unwrap_or_default();
+        Some((Ok(Event::default().data(json)), (rx, None)))
+    });
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,6 +692,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: Mutex::new(None),
+            autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         })
     }
 
@@ -735,6 +787,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: std::sync::Mutex::new(None),
+            autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         })
     }
 
@@ -1541,6 +1596,61 @@ mod tests {
         assert!(
             host.pi_token_map.values().any(|u| u == "com.test.plugin"),
             "PI token must be registered after HTML serve"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_type_text_from_lan() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("content-type", "application/json")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::from(r#"{"action":"type","text":"lo"}"#))
+            .unwrap();
+        // type action can't run in CI (no keyboard/osascript), but must NOT return 400.
+        let resp = app.oneshot(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "type action shape should be accepted");
+    }
+
+    #[tokio::test]
+    async fn execute_clipboard_from_lan() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/execute")
+            .header("content-type", "application/json")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::from(r#"{"action":"clipboard","text":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "clipboard action shape should be accepted");
+    }
+
+    #[tokio::test]
+    async fn autocomplete_sse_returns_200() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/autocomplete")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").and_then(|v| v.to_str().ok()),
+            Some("text/event-stream")
         );
     }
 }

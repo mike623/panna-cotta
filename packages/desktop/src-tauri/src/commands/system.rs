@@ -73,6 +73,55 @@ pub async fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn type_text(text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if text.is_empty() {
+            return Ok(());
+        }
+        // Escape backslashes and double quotes for AppleScript string literal
+        let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+        let output = std::process::Command::new("osascript")
+            .args(["-e", &format!("tell application \"System Events\" to keystroke \"{}\"", escaped)])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("keystroke failed: {err}"));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = text;
+        Err("type_text only supported on macOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn set_clipboard(text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            // stdin dropped here, EOF sent, pbcopy can proceed
+        }
+        child.wait().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = text;
+        Err("set_clipboard only supported on macOS".into())
+    }
+}
+
+#[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }

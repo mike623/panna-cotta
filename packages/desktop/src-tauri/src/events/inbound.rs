@@ -246,6 +246,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: std::sync::Mutex::new(None),
+            autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         })
     }
 

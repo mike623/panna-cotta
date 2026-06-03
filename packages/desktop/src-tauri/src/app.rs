@@ -130,6 +130,11 @@ pub fn run() {
             crate::commands::system::set_autostart,
             crate::commands::updater::check_for_updates,
             crate::commands::server_info::get_server_info,
+            crate::commands::autocomplete::get_autocomplete_config,
+            crate::commands::autocomplete::set_autocomplete_enabled,
+            crate::commands::autocomplete::set_autocomplete_suggestion_count,
+            crate::commands::autocomplete::set_autocomplete_fallback_phrases,
+            crate::commands::autocomplete::get_accessibility_status,
         ])
         .on_menu_event(|app, event| {
             if event.id().as_ref() == "check-for-updates" {
@@ -183,6 +188,20 @@ pub fn run() {
             }
 
             tauri::async_runtime::spawn(async move {
+                // Load persisted autocomplete config and start monitor if enabled
+                {
+                    let ac_config = crate::commands::autocomplete::load_config_raw(&state).await;
+                    *state.autocomplete.config.lock().unwrap() = ac_config.clone();
+                    state.autocomplete.reset_to_fallback();
+                    if ac_config.enabled {
+                        #[cfg(target_os = "macos")]
+                        {
+                            state.autocomplete.monitor_running.store(true, std::sync::atomic::Ordering::SeqCst);
+                            crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
+                        }
+                    }
+                }
+
                 match crate::server::start(state.clone()).await {
                     Ok(port) => {
                         update_tray_tooltip(&app_handle, Some(port), true);

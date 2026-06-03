@@ -18,6 +18,7 @@ import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
 import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
 import { Icon } from './icons'
 import { useHistory } from './lib/useHistory'
+import { AutocompleteSettings } from './AutocompleteSettings'
 
 // ── Tauri bridge types ───────────────────────────────────────────────────────
 interface ServerInfo {
@@ -553,15 +554,18 @@ export function PannaApp() {
               onDuplicate={onInspectorDuplicate}
             />
           ) : (
-            <ActionPalette theme={theme}
-              onTemplate={(t) => {
-                const total = activeProfile.rows * activeProfile.cols
-                let next = -1
-                for (let i = 0; i < total; i++) if (!activePage.slots[i]) { next = i; break }
-                if (next < 0) return
-                onDropAction(next, { actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon })
-              }}
-            />
+            <>
+              <ActionPalette theme={theme}
+                onTemplate={(t) => {
+                  const total = activeProfile.rows * activeProfile.cols
+                  let next = -1
+                  for (let i = 0; i < total; i++) if (!activePage.slots[i]) { next = i; break }
+                  if (next < 0) return
+                  onDropAction(next, { actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon })
+                }}
+              />
+              <AutocompleteSettings theme={theme} />
+            </>
           )}
         </Glass>
       </div>
