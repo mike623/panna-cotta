@@ -271,11 +271,17 @@ function SaraMark({ size = 22, accent }: { size?: number, accent: string }) {
   )
 }
 
-export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, onShortcuts, onCommand, onReset, profileName, dirty, dark, onToggleDark }: {
+export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, onShortcuts, onCommand, onReset, profileName, dirty, dark, onToggleDark, serverPort, appVersion, launchAtLogin, onToggleLaunchAtLogin, onQuit }: {
   theme: Theme, onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean,
   onConnect: () => void, onShortcuts: () => void, onCommand: () => void, onReset: () => void,
-  profileName: string, dirty: boolean, dark: boolean, onToggleDark: () => void
+  profileName: string, dirty: boolean, dark: boolean, onToggleDark: () => void,
+  serverPort?: number
+  appVersion?: string
+  launchAtLogin?: boolean
+  onToggleLaunchAtLogin?: () => void
+  onQuit?: () => void
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const iconBtn = (icon: string, onClick: () => void, opts: { disabled?: boolean, title?: string, active?: boolean } = {}) => (
     <button onClick={onClick} disabled={opts.disabled} title={opts.title} style={{
       all: 'unset', cursor: opts.disabled ? 'default' : 'pointer',
@@ -350,6 +356,17 @@ export function Toolbar({ theme, onUndo, onRedo, canUndo, canRedo, onConnect, on
       {iconBtn(dark ? 'sun' : 'moon', onToggleDark, { title: 'Toggle theme' })}
       {iconBtn('qr', onConnect, { title: 'Connect device' })}
       {iconBtn('reset', onReset, { title: 'Reset' })}
+      {iconBtn('settings', () => setSettingsOpen(v => !v), { title: 'Settings', active: settingsOpen })}
+      <SettingsPopover
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        serverPort={serverPort}
+        appVersion={appVersion}
+        launchAtLogin={launchAtLogin ?? false}
+        onToggleLaunchAtLogin={onToggleLaunchAtLogin ?? (() => {})}
+        onQuit={onQuit ?? (() => {})}
+      />
     </div>
   )
 }

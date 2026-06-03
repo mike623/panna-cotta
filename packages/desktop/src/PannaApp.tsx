@@ -31,13 +31,18 @@ export function PannaApp() {
   const [tweaks, setTweaksRaw] = useState<Tweaks>(() => {
     try {
       const stored = localStorage.getItem('panna-tweaks')
-      return stored ? { ...DEFAULT_TWEAKS, ...JSON.parse(stored) } : DEFAULT_TWEAKS
+      const t = stored ? { ...DEFAULT_TWEAKS, ...JSON.parse(stored) } : DEFAULT_TWEAKS
+      localStorage.setItem('pc.theme', t.dark ? 'dark' : 'light')
+      return t
     } catch { return DEFAULT_TWEAKS }
   })
   const setTweak = <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => {
     setTweaksRaw(prev => {
       const next = { ...prev, [key]: value }
       localStorage.setItem('panna-tweaks', JSON.stringify(next))
+      if (key === 'dark') {
+        localStorage.setItem('pc.theme', value ? 'dark' : 'light')
+      }
       return next
     })
   }
