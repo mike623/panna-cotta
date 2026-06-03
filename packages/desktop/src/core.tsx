@@ -128,9 +128,6 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
   const tileRefs = useRef(new Map<string, HTMLElement>())
   const prevRects = useRef(new Map<string, DOMRect>())
 
-  const slotKey = (s: SlotData | undefined) =>
-    s ? `${s.actionId}|${s.label}|${s.value}|${s.iconOverride || ''}` : null
-
   useLayoutEffect(() => {
     const newRects = new Map<string, DOMRect>()
     tileRefs.current.forEach((el, key) => { if (el) newRects.set(key, el.getBoundingClientRect()) })
@@ -199,7 +196,7 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
               )}
               <div
                 ref={el => {
-                  const key = slotKey(slot)
+                  const key = slot ? `${idx}:${slot.actionId}|${slot.label}` : null
                   if (key) { if (el) tileRefs.current.set(key, el); else tileRefs.current.delete(key) }
                 }}
                 style={{
