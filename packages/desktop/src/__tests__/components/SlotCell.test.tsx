@@ -1,7 +1,6 @@
 import React from 'react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/react'
-import { DndContext } from '@dnd-kit/core'
 
 import { DeviceCanvas } from '../../core'
 import { makeTheme, DEFAULT_TWEAKS } from '../../theme'
@@ -28,47 +27,42 @@ const profile: ProfileData = {
 }
 
 /**
- * SlotCell is not exported from core.tsx, so we exercise it indirectly through
- * DeviceCanvas wrapped in a DndContext provider.
+ * DeviceCanvas uses native HTML5 drag API (no dnd-kit).
  *
- * SCOPE: We can verify that the grid renders the right number of cells and
- * that drag overlays (isOver border, swap badge) appear only under the right
- * conditions. Triggering an actual drop requires dnd-kit's sensor activation
- * which is awkward in jsdom (no hit-testing). For full drag-and-drop coverage,
- * see Phase 3 Playwright tests.
+ * SCOPE: We verify the grid renders the right number of cells and that the
+ * footer metadata is correct. Full drag-and-drop coverage is in Phase 3
+ * Playwright tests where real pointer events work.
  */
-describe('SlotCell (through DeviceCanvas + DndContext)', () => {
+describe('DeviceCanvas (HTML5 drag)', () => {
   it('renders rows*cols slot cells', () => {
     const { container } = render(
-      <DndContext>
-        <DeviceCanvas
-          profile={profile}
-          page={page}
-          selectedSlot={null}
-          theme={theme}
-          activeDragId={null}
-          onSlotClick={() => {}}
-        />
-      </DndContext>,
+      <DeviceCanvas
+        profile={profile}
+        page={page}
+        selectedSlot={null}
+        theme={theme}
+        onSlotClick={() => {}}
+        onDropAction={() => {}}
+        onReorder={() => {}}
+      />,
     )
     // Each cell is a <button> rendered by Tile.
     const buttons = container.querySelectorAll('button')
-    // 9 tile buttons, plus an unknown extra (the badge "Live preview" pill is a span, not a button).
+    // 9 tile buttons (the Live preview pill is a span, not a button).
     expect(buttons.length).toBeGreaterThanOrEqual(9)
   })
 
   it('renders the device canvas footer with the correct grid size', () => {
     const { container } = render(
-      <DndContext>
-        <DeviceCanvas
-          profile={profile}
-          page={page}
-          selectedSlot={null}
-          theme={theme}
-          activeDragId={null}
-          onSlotClick={() => {}}
-        />
-      </DndContext>,
+      <DeviceCanvas
+        profile={profile}
+        page={page}
+        selectedSlot={null}
+        theme={theme}
+        onSlotClick={() => {}}
+        onDropAction={() => {}}
+        onReorder={() => {}}
+      />,
     )
     expect(container.textContent).toContain('3×3')
     expect(container.textContent).toContain('Live preview')
@@ -78,16 +72,15 @@ describe('SlotCell (through DeviceCanvas + DndContext)', () => {
 
   it('does not render a swap badge when no tile drag is in progress', () => {
     const { container } = render(
-      <DndContext>
-        <DeviceCanvas
-          profile={profile}
-          page={page}
-          selectedSlot={null}
-          theme={theme}
-          activeDragId={null}
-          onSlotClick={() => {}}
-        />
-      </DndContext>,
+      <DeviceCanvas
+        profile={profile}
+        page={page}
+        selectedSlot={null}
+        theme={theme}
+        onSlotClick={() => {}}
+        onDropAction={() => {}}
+        onReorder={() => {}}
+      />,
     )
     // The swap badge uses an `Icon name="swap"`. The corresponding SVG path
     // (`<path d="M7 10h13l-3-3M17 14H4l3 3"/>`) appears only when isSwap is true.
@@ -95,10 +88,27 @@ describe('SlotCell (through DeviceCanvas + DndContext)', () => {
     const swapPath = container.querySelector('path[d="M7 10h13l-3-3M17 14H4l3 3"]')
     expect(swapPath).toBeNull()
   })
+
+  it('calls onSlotClick when a tile is clicked', async () => {
+    const onSlotClick = vi.fn()
+    const { container } = render(
+      <DeviceCanvas
+        profile={profile}
+        page={page}
+        selectedSlot={null}
+        theme={theme}
+        onSlotClick={onSlotClick}
+        onDropAction={() => {}}
+        onReorder={() => {}}
+      />,
+    )
+    const firstButton = container.querySelector('button')!
+    firstButton.click()
+    expect(onSlotClick).toHaveBeenCalledTimes(1)
+  })
 })
 
-// NOTE: Tests for the drop indicator (`isOver`) and swap badge active states
-// require simulating dnd-kit's drag lifecycle (pointer down → move → over).
+// NOTE: Tests for the drop indicator and swap badge active states require
+// simulating HTML5 drag lifecycle (dragstart → dragover → drop).
 // jsdom does not implement getBoundingClientRect / elementsFromPoint reliably
-// enough for that, so we defer those to Phase 3 (Playwright). Documented here
-// so it's discoverable.
+// enough for that, so we defer those to Phase 3 (Playwright).
