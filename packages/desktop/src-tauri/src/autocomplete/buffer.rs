@@ -38,8 +38,8 @@ impl WordBuffer {
     /// Characters to send when user taps `full_word` — the suffix after the partial.
     pub fn completion_suffix(&self, full_word: &str) -> String {
         let partial = self.current();
-        if full_word.to_lowercase().starts_with(&partial.to_lowercase()) && partial.len() <= full_word.len() {
-            full_word[partial.len()..].to_string()
+        if full_word.to_lowercase().starts_with(&partial.to_lowercase()) && partial.chars().count() <= full_word.chars().count() {
+            full_word.chars().skip(partial.chars().count()).collect()
         } else {
             full_word.to_string()
         }
@@ -103,5 +103,12 @@ mod tests {
         let mut b = WordBuffer::new();
         b.push('x'); b.push('y'); b.push('z');
         assert_eq!(b.completion_suffix("hello"), "hello");
+    }
+
+    #[test]
+    fn test_completion_suffix_unicode() {
+        let mut b = WordBuffer::new();
+        "café".chars().for_each(|c| { b.push(c); });
+        assert_eq!(b.completion_suffix("cafés"), "s");
     }
 }
