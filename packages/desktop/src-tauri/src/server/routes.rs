@@ -3,13 +3,15 @@ use axum::{
     extract::{ConnectInfo, Path, State},
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Json, Redirect, Response},
+    response::{sse::{Event, Sse}, IntoResponse, Json, Redirect, Response},
     routing::{get, patch, post, put},
     Router,
 };
+use futures_util::{stream, Stream};
 use include_dir::{include_dir, Dir};
 use serde::Deserialize;
 use serde_json::json;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -90,6 +92,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins", get(list_plugins_handler))
         .route("/api/plugins/:uuid/status", get(plugin_status_handler))
         .route("/api/plugin-render", get(get_plugin_render_handler))
+        .route("/api/autocomplete", get(autocomplete_sse_handler))
         .route("/pi/:uuid/*path", get(serve_pi_file))
         .merge(admin)
         .with_state(state)
@@ -640,6 +643,29 @@ window.connectElgatoStreamDeckSocket = function(inPort, inUUID, inRegisterEvent,
     ).into_response()
 }
 
+async fn autocomplete_sse_handler(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let mut rx = state.autocomplete.subscribe();
+    // Send current value immediately on connect
+    let initial = rx.borrow().clone();
+    let initial_json = serde_json::to_string(&serde_json::json!({"words": initial}))
+        .unwrap_or_default();
+
+    let stream = stream::unfold((rx, Some(initial_json)), |(mut rx, pending)| async move {
+        if let Some(data) = pending {
+            return Some((Ok(Event::default().data(data)), (rx, None)));
+        }
+        rx.changed().await.ok()?;
+        let words = rx.borrow_and_update().clone();
+        let json = serde_json::to_string(&serde_json::json!({"words": words}))
+            .unwrap_or_default();
+        Some((Ok(Event::default().data(json)), (rx, None)))
+    });
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,6 +692,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: Mutex::new(None),
+            autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         })
     }
 
@@ -758,6 +787,9 @@ mod tests {
             plugin_host,
             plugin_render,
             app_handle: std::sync::Mutex::new(None),
+            autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
+                crate::autocomplete::state::AutocompleteConfig::default(),
+            )),
         })
     }
 
@@ -1600,6 +1632,26 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "clipboard action shape should be accepted");
+    }
+
+    #[tokio::test]
+    async fn autocomplete_sse_returns_200() {
+        let state = state_with_profile("tok", vec![]).await;
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/autocomplete")
+            .extension(axum::extract::ConnectInfo(
+                std::net::SocketAddr::from(([192, 168, 1, 1], 12345))
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("content-type").and_then(|v| v.to_str().ok()),
+            Some("text/event-stream")
+        );
     }
 }
 
