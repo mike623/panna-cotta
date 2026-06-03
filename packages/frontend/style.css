@@ -37,18 +37,19 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html, body {
-  margin: 0; padding: 0; height: 100%; overflow: hidden;
-}
+html { margin: 0; padding: 0; height: 100%; }
 
 body {
+  margin: 0; padding: 0;
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
   font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   overscroll-behavior: none;
-  overflow-x: hidden;
   transition: background .4s ease, color .4s ease;
 }
 
@@ -73,12 +74,6 @@ body {
 }
 
 /* ── Layout ────────────────────────────────────────────────── */
-#app-root {
-  position: fixed; inset: 0;
-  display: flex; flex-direction: column;
-  overflow: hidden;
-}
-
 .grid-container {
   flex: 1; min-height: 0;
   display: grid;
