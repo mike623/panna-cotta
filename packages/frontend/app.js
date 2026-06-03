@@ -121,9 +121,7 @@ function updateBanner(state, secondsLeft) {
   if (state === 'online') return;
 
   const banner = document.createElement('div');
-  banner.className = state === 'gave-up'
-    ? 'banner banner-conn'
-    : 'banner banner-conn';
+  banner.className = 'banner banner-conn';
 
   const icon = createIcon('wifi-off', 17, '#fff', 2);
   banner.appendChild(icon);
