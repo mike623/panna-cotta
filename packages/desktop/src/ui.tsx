@@ -363,9 +363,8 @@ export function CommandPalette({ open, onClose, theme, onAction }: {
   const [q, setQ] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (open && inputRef.current) inputRef.current.focus() }, [open])
-  if (!open) return null
 
-  const items = [
+  const items = useMemo(() => [
     { kind: 'cmd', id: 'undo',      label: 'Undo',                  hint: '⌘Z' },
     { kind: 'cmd', id: 'redo',      label: 'Redo',                  hint: '⌘⇧Z' },
     { kind: 'cmd', id: 'connect',   label: 'Show connect QR',       hint: '' },
@@ -374,8 +373,14 @@ export function CommandPalette({ open, onClose, theme, onAction }: {
     ...ACTION_LIBRARY.flatMap((c: ActionCategory) => c.actions.map((a: ActionDef) => ({
       kind: 'action', id: a.id, label: `Add ${a.name}`, hint: c.category, icon: a.icon, color: c.color,
     }))),
-  ]
-  const filtered = items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()) || (i.hint || '').toLowerCase().includes(q.toLowerCase()))
+  ], [])
+
+  const filtered = useMemo(() =>
+    items.filter(i => !q || i.label.toLowerCase().includes(q.toLowerCase()) || (i.hint || '').toLowerCase().includes(q.toLowerCase())),
+    [items, q]
+  )
+
+  if (!open) return null
 
   return (
     <div onMouseDown={onClose} style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 80 }}>
@@ -387,8 +392,8 @@ export function CommandPalette({ open, onClose, theme, onAction }: {
           <span style={{ fontSize: 10, color: theme.textFaint, padding: '2px 5px', borderRadius: 4, background: theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>esc</span>
         </div>
         <div data-testid="command-palette-results" style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
-          {filtered.slice(0, 30).map((it, i) => (
-            <button key={i} data-testid={`command-item-${it.kind}-${it.id}`} onClick={() => { onAction(it); onClose() }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, width: '100%', boxSizing: 'border-box', color: theme.text, fontSize: 12.5 }}
+          {filtered.slice(0, 30).map((it) => (
+            <button key={`${it.kind}-${it.id}`} data-testid={`command-item-${it.kind}-${it.id}`} onClick={() => { onAction(it); onClose() }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, width: '100%', boxSizing: 'border-box', color: theme.text, fontSize: 12.5 }}
             onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
             onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}>
               <div style={{ width: 22, height: 22, borderRadius: 6, background: it.color ? `color-mix(in oklch, ${it.color} 18%, transparent)` : (theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), color: it.color || theme.textMute, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
