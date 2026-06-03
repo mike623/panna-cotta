@@ -386,3 +386,63 @@ body {
   height: 14px;
   flex-shrink: 0;
 }
+
+/* ── Suggestion strip (Touch Bar mimic) ─────────────────── */
+.suggestion-strip {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  min-height: 48px;
+  align-items: center;
+  background: var(--bg-secondary, #111);
+  border-top: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+
+.suggestion-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-chip {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: var(--chip-bg, rgba(255,255,255,0.12));
+  color: var(--text-primary, #fff);
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s ease, transform 0.08s ease;
+  white-space: nowrap;
+  touch-action: manipulation;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.suggestion-chip:active {
+  background: var(--chip-active-bg, rgba(255,255,255,0.25));
+  transform: scale(0.93);
+}
+
+.suggestion-chip.long-pressed {
+  background: var(--accent, #3a6ea5);
+}
+
+/* Light mode overrides */
+body.light-mode .suggestion-strip {
+  background: var(--bg-secondary-light, #f0f0f0);
+  border-top-color: rgba(0,0,0,0.1);
+}
+
+body.light-mode .suggestion-chip {
+  background: rgba(0,0,0,0.08);
+  color: #111;
+}

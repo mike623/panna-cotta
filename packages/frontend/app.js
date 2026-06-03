@@ -26,6 +26,8 @@ let config;
 let connectionLost = false;
 let viewMode = localStorage.getItem("viewMode") || "grid";
 let pluginRender = { images: {}, titles: {}, states: {} };
+let autocompleteWords = [];
+let autocompleteSource = null;
 
 function getOrCreateBanner() {
   let banner = document.getElementById("connection-banner");
@@ -72,6 +74,83 @@ function startHealthPing() {
     }
     await fetchPluginRender();
   }, 5000);
+}
+
+function renderSuggestionStrip() {
+  const strip = document.getElementById("suggestion-strip");
+  if (!strip) return;
+  strip.innerHTML = "";
+  autocompleteWords.forEach((word) => {
+    const chip = document.createElement("button");
+    chip.className = "suggestion-chip";
+    chip.textContent = word;
+
+    let longPressTimer = null;
+    let didLongPress = false;
+
+    chip.addEventListener("touchstart", (e) => {
+      didLongPress = false;
+      longPressTimer = setTimeout(() => {
+        didLongPress = true;
+        chip.classList.add("long-pressed");
+        handleChipAction(word, "clipboard");
+      }, 500);
+    }, { passive: true });
+
+    chip.addEventListener("touchend", () => {
+      clearTimeout(longPressTimer);
+      chip.classList.remove("long-pressed");
+      if (!didLongPress) {
+        handleChipAction(word, "type");
+      }
+    });
+
+    chip.addEventListener("touchcancel", () => {
+      clearTimeout(longPressTimer);
+      chip.classList.remove("long-pressed");
+    });
+
+    // Desktop fallback: click = type
+    chip.addEventListener("click", () => {
+      if (!didLongPress) handleChipAction(word, "type");
+    });
+
+    strip.appendChild(chip);
+  });
+}
+
+async function handleChipAction(word, action) {
+  try {
+    await fetch(`${api.baseUrl}/api/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, text: word }),
+    });
+  } catch (err) {
+    console.error("chip action failed:", err);
+  }
+}
+
+function startAutocompleteSSE() {
+  if (autocompleteSource) autocompleteSource.close();
+  autocompleteSource = new EventSource(`${api.baseUrl}/api/autocomplete`);
+
+  autocompleteSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (Array.isArray(data.words)) {
+        autocompleteWords = data.words;
+        renderSuggestionStrip();
+      }
+    } catch (_) {}
+  };
+
+  autocompleteSource.onerror = () => {
+    autocompleteSource.close();
+    autocompleteSource = null;
+    // Reconnect with 3s backoff
+    setTimeout(startAutocompleteSSE, 3000);
+  };
 }
 
 function flashButton(button, className) {
@@ -349,6 +428,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await fetchPluginRender();
   renderView();
   startHealthPing();
+  startAutocompleteSSE();
 
   if (typeof window.__TAURI__ !== "undefined") {
     const closeBtn = document.getElementById("tauri-close");
