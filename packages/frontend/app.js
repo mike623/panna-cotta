@@ -1,3 +1,82 @@
+// ── Inline SVG icon set (no external deps) ───────────────────
+const ICON_PATHS = {
+  globe:    '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  app:      '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  volup:    '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8a5 5 0 0 1 0 8M19 5a9 9 0 0 1 0 14"/>',
+  voldown:  '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 10l4 4M20 10l-4 4"/>',
+  mute:     '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 6M21 9l-5 6"/>',
+  sun:      '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+  moon:     '<path d="M20 14a8 8 0 1 1-10-10 7 7 0 0 0 10 10z"/>',
+  sleep:    '<path d="M20 14a8 8 0 1 1-10-10 7 7 0 0 0 10 10z"/><path d="M14 4h4l-4 4h4"/>',
+  lock:     '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  play:     '<path d="M7 5l12 7-12 7z"/>',
+  next:     '<path d="M5 5l10 7-10 7z"/><path d="M17 5v14"/>',
+  prev:     '<path d="M19 5l-10 7 10 7z"/><path d="M7 5v14"/>',
+  cmd:      '<path d="M8 8a2 2 0 1 1 2-2v12a2 2 0 1 1-2-2h8a2 2 0 1 1-2 2V6a2 2 0 1 1 2 2H8z"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
+  spark:    '<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+  folder:   '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
+  home:     '<path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2v-9z"/>',
+  broadcast:'<circle cx="12" cy="12" r="2"/><path d="M8 8a6 6 0 0 0 0 8M16 8a6 6 0 0 1 0 8M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/>',
+  calc:     '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M16 15h0M8 19h2M12 19h2M16 19h0"/>',
+  code:     '<path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/>',
+  chat:     '<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>',
+  mail:     '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/>',
+  video:    '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/>',
+  zap:      '<path d="M13 3L4 14h7l-1 7 9-11h-7z"/>',
+  x:        '<path d="M6 6l12 12M18 6l-6 6 0 0L6 18"/>',
+  'wifi-off':'<path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.56 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>',
+  'arrow-down': '<path d="M12 5v14M6 13l6 6 6-6"/>',
+};
+
+function createIcon(name, size = 20, color = 'currentColor', strokeWidth = 1.6) {
+  const paths = ICON_PATHS[name] || ICON_PATHS.spark;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', size);
+  svg.setAttribute('height', size);
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', color);
+  svg.setAttribute('stroke-width', strokeWidth);
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.style.flexShrink = '0';
+  svg.innerHTML = paths;
+  return svg;
+}
+
+// Sara SVG mark (皿 — top-down plate with 3×3 dot grid)
+function createSaraMark(size = 20, accent = '#C8472E') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('width', size);
+  svg.setAttribute('height', size);
+  svg.style.display = 'block';
+  svg.style.flexShrink = '0';
+  const G = [35, 50, 65];
+  let inner = `<rect width="100" height="100" rx="24" fill="#EFE7D6"/>
+    <circle cx="50" cy="50" r="31" fill="#F6F1E8" stroke="#211F1B" stroke-opacity="0.16" stroke-width="1.4"/>
+    <circle cx="50" cy="50" r="24" fill="none" stroke="#211F1B" stroke-opacity="0.10" stroke-width="1"/>`;
+  G.forEach((y, ri) => G.forEach((x, ci) => {
+    const active = ri === 1 && ci === 1;
+    inner += `<circle cx="${x}" cy="${y}" r="${active ? 4.8 : 3.8}" fill="${active ? accent : '#211F1B'}" fill-opacity="${active ? 1 : 0.82}"/>`;
+  }));
+  svg.innerHTML = inner;
+  return svg;
+}
+
+function renderPanelHeader() {
+  const el = document.getElementById('panel-header');
+  if (!el) return;
+  el.innerHTML = '';
+  el.appendChild(createSaraMark(20, '#C8472E'));
+  const wordmark = document.createElement('span');
+  wordmark.className = 'panel-header-wordmark';
+  wordmark.textContent = 'Panna Cotta';
+  el.appendChild(wordmark);
+}
+
 class StreamDeckAPI {
   constructor() {
     this.baseUrl = `${window.location.protocol}//${window.location.host}`;
@@ -35,33 +114,43 @@ const HEALTH_MAX_FAILURES = 6;
 let healthTimeoutId = null;
 let healthFailCount = 0;
 
-function getOrCreateBanner() {
-  let banner = document.getElementById("connection-banner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "connection-banner";
-    banner.className = "connection-banner hidden";
-    document.body.prepend(banner);
-  }
-  return banner;
-}
-
 function updateBanner(state, secondsLeft) {
-  const banner = getOrCreateBanner();
-  if (state === "online") {
-    banner.classList.add("hidden");
-    connectionLost = false;
-    return;
-  }
-  connectionLost = true;
-  if (state === "retrying") {
-    banner.innerHTML = `<i data-lucide="wifi-off"></i><span>Backend disconnected — retrying in ${secondsLeft}s</span>`;
+  // Remove existing banners
+  document.querySelectorAll('.banner').forEach(b => b.remove());
+  connectionLost = state !== 'online';
+  if (state === 'online') return;
+
+  const banner = document.createElement('div');
+  banner.className = state === 'gave-up'
+    ? 'banner banner-conn'
+    : 'banner banner-conn';
+
+  const icon = createIcon('wifi-off', 17, '#fff', 2);
+  banner.appendChild(icon);
+
+  const text = document.createElement('span');
+  text.className = 'banner-text';
+  text.textContent = state === 'retrying'
+    ? `Backend disconnected — retrying in ${secondsLeft}s`
+    : 'Backend disconnected';
+  banner.appendChild(text);
+
+  if (state === 'gave-up') {
+    const btn = document.createElement('button');
+    btn.className = 'banner-close';
+    btn.textContent = 'Retry';
+    btn.style.cssText = 'font-size:11px;font-weight:600;background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.5);border-radius:6px;padding:2px 8px;color:#fff;cursor:pointer;';
+    btn.addEventListener('click', manualHealthRetry);
+    banner.appendChild(btn);
   } else {
-    banner.innerHTML = '<i data-lucide="wifi-off"></i><span>Backend disconnected</span><button class="banner-retry-btn">Retry</button>';
-    banner.querySelector(".banner-retry-btn").addEventListener("click", manualHealthRetry);
+    const spin = document.createElement('span');
+    spin.className = 'banner-spin';
+    banner.appendChild(spin);
   }
-  banner.classList.remove("hidden");
-  lucide.createIcons({ nodes: [banner] });
+
+  // Insert after header
+  const header = document.getElementById('panel-header');
+  header ? header.after(banner) : document.body.prepend(banner);
 }
 
 function manualHealthRetry() {
@@ -237,10 +326,7 @@ function renderGrid() {
         img.alt = "";
         button.appendChild(img);
       } else {
-        const icon = document.createElement("i");
-        icon.setAttribute("data-lucide", buttonConfig.icon);
-        icon.className = "button-icon";
-        button.appendChild(icon);
+        button.appendChild(createIcon(buttonConfig.icon, 24, 'currentColor', 1.7));
       }
 
       const label = document.createElement("span");
@@ -254,7 +340,6 @@ function renderGrid() {
     gridContainer.appendChild(button);
   }
 
-  lucide.createIcons();
   updatePageIndicator();
 }
 
@@ -280,10 +365,7 @@ function renderList() {
       img.alt = "";
       item.appendChild(img);
     } else {
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", buttonConfig.icon);
-      icon.className = "list-item-icon";
-      item.appendChild(icon);
+      item.appendChild(createIcon(buttonConfig.icon, 22, 'currentColor', 1.7));
     }
 
     const name = document.createElement("span");
@@ -294,8 +376,6 @@ function renderList() {
     item.addEventListener("click", () => handleButtonPress(item, buttonConfig));
     gridContainer.appendChild(item);
   }
-
-  lucide.createIcons();
 
   const dots = document.getElementById("page-dots");
   if (dots) dots.remove();
@@ -349,10 +429,7 @@ function createAdjacentPage(direction) {
         img.alt = "";
         btn.appendChild(img);
       } else {
-        const icon = document.createElement("i");
-        icon.setAttribute("data-lucide", bc.icon);
-        icon.className = "button-icon";
-        btn.appendChild(icon);
+        btn.appendChild(createIcon(bc.icon, 24, 'currentColor', 1.7));
       }
       const label = document.createElement("span");
       label.className = "button-label";
@@ -363,7 +440,6 @@ function createAdjacentPage(direction) {
   }
 
   currentPage = savedPage;
-  lucide.createIcons({ nodes: [el] });
   return el;
 }
 
@@ -446,8 +522,13 @@ function updatePageIndicator() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const savedTheme = localStorage.getItem("theme") || "dark";
-  document.body.className = savedTheme === "dark" ? "dark-mode" : "light-mode";
+  // Set theme from localStorage or default to dark
+  const savedTheme = localStorage.getItem('pc.theme');
+  if (savedTheme === 'light') {
+    document.body.classList.remove('dark-mode');
+  } else {
+    document.body.classList.add('dark-mode');
+  }
 
   try {
     config = await api.getConfig();
@@ -459,6 +540,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   await fetchPluginRender();
+  renderPanelHeader();
   renderView();
   startHealthPing();
   startAutocompleteSSE();
@@ -467,7 +549,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const closeBtn = document.getElementById("tauri-close");
     if (closeBtn) {
       closeBtn.classList.remove("hidden");
-      lucide.createIcons({ nodes: [closeBtn] });
       closeBtn.addEventListener("click", () => window.close());
     }
   }
