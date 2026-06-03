@@ -1,3 +1,4 @@
+pub mod autocomplete;
 pub mod config;
 pub mod plugins;
 pub mod plugin_install;
