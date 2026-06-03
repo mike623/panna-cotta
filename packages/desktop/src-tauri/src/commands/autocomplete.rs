@@ -50,7 +50,14 @@ pub async fn set_autocomplete_enabled(
     save_config(&state, &config).await.map_err(|e| e.to_string())?;
     if enabled {
         #[cfg(target_os = "macos")]
-        crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
+        {
+            use std::sync::atomic::Ordering;
+            if state.autocomplete.monitor_running.compare_exchange(
+                false, true, Ordering::SeqCst, Ordering::SeqCst
+            ).is_ok() {
+                crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
+            }
+        }
     }
     Ok(())
 }
@@ -60,9 +67,11 @@ pub async fn set_autocomplete_suggestion_count(
     count: usize,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let clamped = if count <= 3 { 3 } else { 5 };
+    if count != 3 && count != 5 {
+        return Err(format!("suggestion_count must be 3 or 5, got {count}"));
+    }
     let mut config = load_config(&state).await;
-    config.suggestion_count = clamped;
+    config.suggestion_count = count;
     *state.autocomplete.config.lock().unwrap() = config.clone();
     save_config(&state, &config).await.map_err(|e| e.to_string())
 }

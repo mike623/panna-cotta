@@ -27,6 +27,7 @@ impl Default for AutocompleteConfig {
 pub struct AutocompleteState {
     pub config: Mutex<AutocompleteConfig>,
     pub last_keystroke: Mutex<Instant>,
+    pub monitor_running: std::sync::atomic::AtomicBool,
     suggestions_tx: watch::Sender<Vec<String>>,
 }
 
@@ -37,6 +38,7 @@ impl AutocompleteState {
         Self {
             config: Mutex::new(config),
             last_keystroke: Mutex::new(Instant::now()),
+            monitor_running: std::sync::atomic::AtomicBool::new(false),
             suggestions_tx: tx,
         }
     }

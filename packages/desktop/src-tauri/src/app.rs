@@ -195,7 +195,10 @@ pub fn run() {
                     state.autocomplete.reset_to_fallback();
                     if ac_config.enabled {
                         #[cfg(target_os = "macos")]
-                        crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
+                        {
+                            state.autocomplete.monitor_running.store(true, std::sync::atomic::Ordering::SeqCst);
+                            crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
+                        }
                     }
                 }
 
