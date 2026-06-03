@@ -7,7 +7,7 @@ import type { ProfileData, SlotData } from './data'
 import { backendToProfile, profileToBackend } from './bridge'
 import type { BackendConfig, BackendProfile } from './bridge'
 import { Glass, DeviceCanvas, ProfilesRail } from './core'
-import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
+import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay, Stepper } from './ui'
 import { Icon } from './icons'
 import { useHistory } from './lib/useHistory'
 import { AutocompleteSettings } from './AutocompleteSettings'
@@ -16,30 +16,6 @@ import { AutocompleteSettings } from './AutocompleteSettings'
 interface ServerInfo {
   ip: string
   port: number
-}
-
-// ── Stepper ──────────────────────────────────────────────────────────────────
-function Stepper({ label, value, onChange, min, max, theme }: {
-  label: string; value: number; onChange: (v: number) => void; min: number; max: number; theme: ReturnType<typeof makeTheme>
-}) {
-  const stepBtn: React.CSSProperties = { all: 'unset', cursor: 'pointer', padding: '4px 6px', color: theme.textMute, display: 'flex', alignItems: 'center' }
-  return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center',
-      background: theme.dark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.6)',
-      border: `0.5px solid ${theme.borderStrong}`,
-      borderRadius: 7, overflow: 'hidden',
-    }}>
-      <span style={{ padding: '0 6px', fontSize: 10, fontWeight: 600, color: theme.textFaint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
-      <button onClick={() => onChange(Math.max(min, value - 1))} style={stepBtn}>
-        <Icon name="minus" size={11} />
-      </button>
-      <span style={{ padding: '0 8px', fontVariantNumeric: 'tabular-nums', fontWeight: 600, fontSize: 11, color: theme.text }}>{value}</span>
-      <button onClick={() => onChange(Math.min(max, value + 1))} style={stepBtn}>
-        <Icon name="plus" size={11} />
-      </button>
-    </div>
-  )
 }
 
 // ── App state history type ───────────────────────────────────────────────────
@@ -532,7 +508,7 @@ export function PannaApp() {
 
       {/* Overlays */}
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} theme={theme} onAction={onCmd} />
-      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} lanUrl={lanUrl} />
+      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} url={lanUrl} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} theme={theme} />
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={onImportFileChange} />
     </div>
