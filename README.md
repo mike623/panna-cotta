@@ -2,179 +2,164 @@
 <div align="center">
   <img src="packages/frontend/assets/icon-512.png" alt="Panna Cotta" width="72" height="72" />
   <h1>Panna Cotta</h1>
-  <p>A web-based Stream Deck for controlling your Mac from any device on your network.</p>
+  <p>A native macOS app that turns any phone or tablet into a wireless control panel for your Mac.</p>
 
-[![Build](https://github.com/mwong-io/panna-cotta/actions/workflows/deno_build.yml/badge.svg)](https://github.com/mwong-io/panna-cotta/actions/workflows/deno_build.yml)
-[![Deno 2+](https://img.shields.io/badge/deno-2%2B-black?style=flat-square&logo=deno)](https://deno.land)
+[![Build](https://github.com/mike623/panna-cotta/actions/workflows/release.yml/badge.svg)](https://github.com/mike623/panna-cotta/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
 [Features](#features) • [Quick start](#quick-start) •
-[Configuration](#configuration) • [Development](#development) •
-[Building](#building)
+[Development](#development) • [Building](#building)
 
 </div>
 
 ---
 
-Define a grid of buttons in a TOML file. Open the URL on your phone, tablet, or
-any browser on the same network. Click a button to open a URL or launch a macOS
-app — instantly, from across the room.
+Open the app on your Mac. Scan the QR code on your phone. Tap a button to launch
+an app, open a URL, control media, lock the screen — instantly, from across the
+room.
 
 <div align="center">
-  <img src="packages/frontend/assets/screenshot.png" alt="Grid view" width="280" />
-  &nbsp;&nbsp;&nbsp;
-  <img src="packages/frontend/assets/screenshot-list.png" alt="List view" width="280" />
+  <img src="docs/screenshots/lan-grid-dark.png" alt="Grid view" width="190" />
+  &nbsp;
+  <img src="docs/screenshots/lan-grid-light.png" alt="Grid view light" width="190" />
+  &nbsp;
+  <img src="docs/screenshots/lan-list-dark.png" alt="List view" width="190" />
 </div>
 
 ## Features
 
+- **Admin UI** — configure buttons, profiles, and themes from a native macOS
+  window; no file editing required
 - **Configurable grid** — set rows and columns to match your device's layout
-- **TOML configuration** — define buttons in a simple `stream-deck.config.toml`
-  file
-- **Two action types** — open a URL in the client browser or launch a macOS app
-  on the host
-- **Any Lucide icon** — use any icon name from
-  [lucide.dev/icons](https://lucide.dev/icons)
+- **Multiple profiles** — switch between different button sets in one click
+- **Multiple action types** — open a URL, launch a macOS app, control system
+  functions (volume, lock, sleep, media playback)
+- **Any inline icon** — choose from a built-in icon set drawn with SVG paths
 - **Pagination** — extra buttons overflow into additional pages automatically
-- **Swipe to paginate** — drag left/right to switch pages; follows your finger
-  with snap-back if not committed
+- **Swipe to paginate** — drag left/right to switch pages; snaps back if not
+  committed
 - **List view** — toggle between grid and scrollable list with one tap;
   preference persists
+- **Touch Bar autocomplete** — a suggestion strip appears when your Mac's
+  keyboard monitor detects a partial word; tap to type or long-press to copy
 - **PWA installable** — add to your phone or tablet home screen for a native
   feel
 - **Offline-capable** — service worker caches the UI so it loads without a
   network hop
-- **Dark / light theme** — toggle manually; preference is remembered across
-  sessions
-- **QR code on home page** — scan to connect a new device in seconds
-- **Standalone binary** — ships as a single executable with the frontend
-  embedded; no Deno required on the host
+- **Dark / light theme** — toggle manually; preference is remembered
+- **QR code quick-connect** — scan the home page to connect a new device in
+  seconds
+- **Auto-update** — notified of new releases automatically; updates install on
+  next launch
 
 ## Quick start
 
-**Prerequisites:** [Deno 2+](https://deno.land), macOS
+**Requires macOS.**
 
-```sh
-git clone https://github.com/mwong-io/panna-cotta.git
-cd panna-cotta
-deno task start:backend
-```
+Download the latest `.dmg` from the
+[Releases page](https://github.com/mike623/panna-cotta/releases), open it,
+drag Panna Cotta to Applications, and launch it.
 
-Open [http://localhost:8000](http://localhost:8000) in any browser. The home
-page shows a QR code — scan it to open the Stream Deck on a phone or tablet.
-
-To access from another device on your network, replace `localhost` with your
-Mac's local IP address (e.g. `http://192.168.1.x:8000`).
+A tray icon appears. Click **Open** to see the QR code, or **Admin Config** to
+edit your buttons. Scan the QR code on any phone or tablet to open the LAN
+panel.
 
 > [!TIP]
-> Set the `STREAM_DECK_PORT` environment variable to run on a different port.
-
-## Configuration
-
-Edit `stream-deck.config.toml` in the project root. Changes are picked up on the
-next page load.
-
-```toml
-[grid]
-rows = 2
-cols = 3
-
-[[buttons]]
-name = "GitHub"
-type = "browser"
-icon = "github"
-action = "https://github.com"
-
-[[buttons]]
-name = "VS Code"
-type = "system"
-icon = "code"
-action = "Visual Studio Code"
-```
-
-### Button types
-
-| Type      | Behavior                                             |
-| --------- | ---------------------------------------------------- |
-| `browser` | Opens the `action` URL in the client's browser       |
-| `system`  | Launches the named macOS application on the host Mac |
-
-### Icons
-
-The `icon` field accepts any [Lucide](https://lucide.dev/icons) icon name (e.g.
-`github`, `youtube`, `mail`, `code`, `music`).
-
-### Pagination
-
-When the number of buttons exceeds `rows × cols`, the grid automatically
-paginates. Swipe left/right anywhere on the grid to navigate — the page follows
-your finger and snaps back if you don't cross the threshold. Tap the toolbar
-arrows for button-driven navigation. Page indicator dots are always visible.
+> Your panel URL is also shown in the tray menu — share it or type it manually
+> if QR scanning isn't convenient.
 
 ## Development
+
+### Prerequisites
+
+- [Rust toolchain](https://rustup.rs) (stable)
+- [Node.js](https://nodejs.org) 18+
+- [Tauri CLI prerequisites for macOS](https://v2.tauri.app/start/prerequisites/#macos)
+
+### Commands
+
+```sh
+# Dev (Vite + Tauri hot-reload)
+cd packages/desktop
+npm install
+npm run tauri dev
+
+# Rust unit tests
+cd packages/desktop/src-tauri
+cargo test
+
+# Rust lint
+cargo clippy
+
+# Frontend build only
+cd packages/desktop
+npm run build
+```
 
 ### Project structure
 
 ```
 packages/
-  backend/
-    server.ts           # Hono HTTP server and API routes
-    services/
-      config.ts         # TOML config loading and Zod validation
-      system.ts         # macOS command execution
-    deno.json           # Backend dependencies
   frontend/
-    index.html          # Setup page with QR code
-    app.js              # Stream Deck UI and API client
-    style.css           # Theming via CSS variables
-    sw.js               # Service worker (cache-first, skips /api/*)
+    app.js              # LAN panel UI (served to phones/tablets)
+    style.css           # CSS variables for dark/light theme
+    sw.js               # Service worker
     manifest.json       # PWA manifest
-stream-deck.config.toml # Your button configuration
-deno.json               # Root tasks
+  desktop/
+    src/                # React admin SPA
+      PannaApp.tsx      # Root component
+      core.tsx          # DeviceCanvas, Glass, ProfilesRail
+      ui.tsx            # ActionPalette, Inspector, Toolbar, etc.
+      AutocompleteSettings.tsx
+    src-tauri/
+      src/
+        app.rs          # Tauri builder: tray, windows, command registration
+        server/
+          mod.rs        # Axum HTTP server startup + port resolution
+          routes.rs     # HTTP handlers (mirrors Tauri commands for LAN)
+          state.rs      # AppState, profile CRUD, config read/write
+        commands/       # Tauri IPC commands
+      tauri.conf.json
+      Cargo.toml
 ```
 
-### Commands
+### Architecture
 
-| Task                            | Description                            |
-| ------------------------------- | -------------------------------------- |
-| `deno task start:backend`       | Start the server on port 8000          |
-| `deno task start:backend:watch` | Start with auto-reload on file changes |
-| `deno task test`                | Run all tests                          |
-| `deno task fmt`                 | Format source files                    |
-| `deno task lint`                | Lint source files                      |
+Panna Cotta is a Tauri app with an embedded Axum HTTP server.
 
-> [!NOTE]
-> The frontend is plain HTML/CSS/JS — no build step required. The backend serves
-> it directly as static files.
+- **Admin UI** — React SPA loaded in the native Tauri webview
+  (`tauri://localhost/index.html`).
+- **LAN panel** — plain HTML/JS (`packages/frontend/`) embedded in the
+  binary and served over HTTP at `http://192.168.x.x:PORT/apps/`. Phones
+  connect here.
+- **Shared state** — `Arc<AppState>` shared between Axum handlers and Tauri
+  commands. Config is always read from disk on demand.
+- **Port persistence** — Axum picks a free port in 30000–39999 and writes it
+  to `~/.panna-cotta.port`.
+- **Profiles** — per-profile TOML files in `~/.panna-cotta/profiles/*.toml`.
+
+### Screenshots
+
+To regenerate the screenshots in `docs/screenshots/`:
+
+```sh
+cd packages/desktop
+npm run screenshots
+```
+
+Requires Playwright's Chromium browser (`npx playwright install chromium` once).
 
 ## Building
 
-### Standalone binary
-
 ```sh
-deno task compile
+cd packages/desktop
+npm run tauri build
 ```
 
-Produces `stream-backend` — a self-contained executable with the frontend assets
-embedded. Copy it to any machine and run it; no Deno installation needed.
+Produces a signed `.dmg` (macOS). The embedded LAN frontend is compiled into
+the binary at build time via `include_dir!`.
 
 ### Releases
 
-Tagged commits (`v*`) trigger GitHub Actions to build for three targets and
-publish a GitHub Release:
-
-| Binary                         | Target              |
-| ------------------------------ | ------------------- |
-| `stream-backend-linux-x86_64`  | Linux (x86\_64)     |
-| `stream-backend-macos-x86_64`  | macOS Intel         |
-| `stream-backend-macos-aarch64` | macOS Apple Silicon |
-
-Download the appropriate binary from the
-[Releases page](https://github.com/mwong-io/panna-cotta/releases), make it
-executable, and run it from the directory containing your
-`stream-deck.config.toml`.
-
-```sh
-chmod +x stream-backend-macos-aarch64
-./stream-backend-macos-aarch64
-```
+Tagged commits (`v*`) trigger GitHub Actions to build and publish a GitHub
+Release with macOS `.dmg` binaries for Apple Silicon and Intel.
