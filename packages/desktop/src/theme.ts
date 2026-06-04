@@ -1,13 +1,14 @@
 export interface Tweaks {
   dark: boolean
   accent: string
-  hue: number
+  hue: number       // used only for decorative blob in PannaApp
   glassy: boolean
 }
 
 export interface Theme {
   dark: boolean
   accent: string
+  matcha: string
   bg: string
   panel: string
   panelStrong: string
@@ -23,35 +24,42 @@ export interface Theme {
   radius: number
   radiusLg: number
   font: string
+  fontSerif: string
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
   dark: false,
-  accent: 'oklch(0.72 0.18 230)',
-  hue: 250,
+  accent: '#C8472E',
+  hue: 220,
   glassy: true,
 }
 
 export function makeTheme(t: Tweaks): Theme {
   const { dark, accent } = t
+  const matcha = dark ? 'oklch(0.66 0.07 130)' : 'oklch(0.52 0.07 130)'
   return {
-    dark, accent,
+    dark, accent, matcha,
     bg: dark
-      ? `radial-gradient(1200px 600px at 20% 0%, oklch(0.32 0.04 ${t.hue}) 0%, oklch(0.18 0.02 ${t.hue}) 60%, oklch(0.12 0.01 ${t.hue}) 100%)`
-      : `radial-gradient(1200px 600px at 20% 0%, oklch(0.96 0.03 ${t.hue}) 0%, oklch(0.92 0.02 ${t.hue}) 55%, oklch(0.86 0.02 ${t.hue}) 100%)`,
-    panel:        dark ? 'rgba(28,28,32,0.55)' : 'rgba(255,255,255,0.55)',
-    panelStrong:  dark ? 'rgba(38,38,44,0.75)' : 'rgba(255,255,255,0.78)',
-    border:       dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-    borderStrong: dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)',
-    inset:        dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)',
-    text:         dark ? 'oklch(0.96 0.005 250)' : 'oklch(0.22 0.01 250)',
-    textMute:     dark ? 'oklch(0.72 0.005 250)' : 'oklch(0.45 0.01 250)',
-    textFaint:    dark ? 'oklch(0.55 0.005 250)' : 'oklch(0.6 0.01 250)',
-    tile:         dark ? 'oklch(0.28 0.015 250)' : 'oklch(0.97 0.005 250)',
-    tileEmpty:    dark ? 'oklch(0.22 0.01 250 / 0.5)' : 'oklch(0.92 0.005 250 / 0.5)',
-    blur:         t.glassy ? 'blur(28px) saturate(180%)' : 'blur(8px) saturate(120%)',
-    radius: 14,
-    radiusLg: 22,
-    font: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif',
+      ? `radial-gradient(1100px 620px at 12% -8%, rgba(255,255,255,.045), transparent 60%),
+         radial-gradient(820px 700px at 104% 112%, rgba(0,0,0,.45), transparent 60%),
+         #15161a`
+      : `radial-gradient(1100px 620px at 12% -8%, rgba(255,255,255,.55), transparent 60%),
+         radial-gradient(820px 700px at 104% 112%, rgba(33,31,27,.045), transparent 60%),
+         #EFE7D6`,
+    panel:        dark ? 'rgba(26,28,32,0.72)'   : 'rgba(244,236,220,0.72)',
+    panelStrong:  dark ? 'rgba(29,31,36,0.92)'   : 'rgba(246,241,232,0.92)',
+    border:       dark ? 'rgba(255,255,255,0.09)' : 'rgba(33,31,27,0.10)',
+    borderStrong: dark ? 'rgba(255,255,255,0.15)' : 'rgba(33,31,27,0.17)',
+    inset:        dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.6)',
+    text:         dark ? '#ece7dc' : '#211F1B',
+    textMute:     dark ? '#9b9484' : '#6f675a',
+    textFaint:    dark ? '#6c665a' : '#a99f8c',
+    tile:         dark ? '#1d1f24' : '#E7DDC9',
+    tileEmpty:    dark ? 'rgba(29,31,36,0.5)' : 'rgba(231,221,201,0.5)',
+    blur:         t.glassy ? 'blur(20px) saturate(140%)' : 'blur(7px) saturate(115%)',
+    radius: 12,
+    radiusLg: 18,
+    font: '"Zen Kaku Gothic New", system-ui, sans-serif',
+    fontSerif: '"Shippori Mincho", "Hiragino Mincho ProN", serif',
   }
 }

@@ -1,21 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { makeTheme, DEFAULT_TWEAKS } from './theme'
 import type { Tweaks } from './theme'
 import { findAction, makeInitialProfiles } from './data'
 import type { ProfileData, SlotData } from './data'
 import { backendToProfile, profileToBackend } from './bridge'
 import type { BackendConfig, BackendProfile } from './bridge'
-import { Glass, DeviceCanvas, ProfilesRail, Tile } from './core'
-import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay } from './ui'
+import { Glass, DeviceCanvas, ProfilesRail } from './core'
+import { ActionPalette, Inspector, Toolbar, CommandPalette, ConnectPopover, ShortcutsOverlay, Stepper } from './ui'
 import { Icon } from './icons'
 import { useHistory } from './lib/useHistory'
 import { AutocompleteSettings } from './AutocompleteSettings'
@@ -24,30 +16,6 @@ import { AutocompleteSettings } from './AutocompleteSettings'
 interface ServerInfo {
   ip: string
   port: number
-}
-
-// ── Stepper ──────────────────────────────────────────────────────────────────
-function Stepper({ label, value, onChange, min, max, theme }: {
-  label: string; value: number; onChange: (v: number) => void; min: number; max: number; theme: ReturnType<typeof makeTheme>
-}) {
-  const stepBtn: React.CSSProperties = { all: 'unset', cursor: 'pointer', padding: '4px 6px', color: theme.textMute, display: 'flex', alignItems: 'center' }
-  return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center',
-      background: theme.dark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.6)',
-      border: `0.5px solid ${theme.borderStrong}`,
-      borderRadius: 7, overflow: 'hidden',
-    }}>
-      <span style={{ padding: '0 6px', fontSize: 10, fontWeight: 600, color: theme.textFaint, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
-      <button onClick={() => onChange(Math.max(min, value - 1))} style={stepBtn}>
-        <Icon name="minus" size={11} />
-      </button>
-      <span style={{ padding: '0 8px', fontVariantNumeric: 'tabular-nums', fontWeight: 600, fontSize: 11, color: theme.text }}>{value}</span>
-      <button onClick={() => onChange(Math.min(max, value + 1))} style={stepBtn}>
-        <Icon name="plus" size={11} />
-      </button>
-    </div>
-  )
 }
 
 // ── App state history type ───────────────────────────────────────────────────
@@ -63,13 +31,18 @@ export function PannaApp() {
   const [tweaks, setTweaksRaw] = useState<Tweaks>(() => {
     try {
       const stored = localStorage.getItem('panna-tweaks')
-      return stored ? { ...DEFAULT_TWEAKS, ...JSON.parse(stored) } : DEFAULT_TWEAKS
+      const t = stored ? { ...DEFAULT_TWEAKS, ...JSON.parse(stored) } : DEFAULT_TWEAKS
+      localStorage.setItem('pc.theme', t.dark ? 'dark' : 'light')
+      return t
     } catch { return DEFAULT_TWEAKS }
   })
   const setTweak = <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => {
     setTweaksRaw(prev => {
       const next = { ...prev, [key]: value }
       localStorage.setItem('panna-tweaks', JSON.stringify(next))
+      if (key === 'dark') {
+        localStorage.setItem('pc.theme', value ? 'dark' : 'light')
+      }
       return next
     })
   }
@@ -103,9 +76,6 @@ export function PannaApp() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('')
   const [loading, setLoading] = useState(true)
-  const [activeDragId, setActiveDragId] = useState<string | null>(null)
-  const [activeDragData, setActiveDragData] = useState<Record<string, unknown> | null>(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Derived
@@ -329,29 +299,6 @@ export function PannaApp() {
     setSelectedSlot(null)
   }
 
-  const handleDragStart = useCallback(({ active }: DragStartEvent) => {
-    setActiveDragId(active.id as string)
-    setActiveDragData((active.data.current as Record<string, unknown>) ?? null)
-  }, [])
-
-  const handleDragEnd = useCallback(({ active, over }: DragEndEvent) => {
-    setActiveDragId(null)
-    setActiveDragData(null)
-    if (!over) return
-    const slotIdx = parseInt((over.id as string).replace('slot-', ''), 10)
-    if (isNaN(slotIdx)) return
-    const d = active.data.current as {
-      type: string
-      from?: number
-      actionId?: string
-      name?: string
-      value?: string
-      iconOverride?: string
-    }
-    if (d.type === 'action') onDropAction(slotIdx, { actionId: d.actionId!, name: d.name!, value: d.value || '', iconOverride: d.iconOverride })
-    if (d.type === 'tile')   onReorder(d.from!, slotIdx)
-  }, [onDropAction, onReorder])
-
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -463,12 +410,6 @@ export function PannaApp() {
       </div>
 
       {/* Body — three zones */}
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => { setActiveDragId(null); setActiveDragData(null) }}
-      >
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14, padding: 14, position: 'relative', zIndex: 1 }}>
         {/* Left: profiles */}
         <ProfilesRail
@@ -477,7 +418,6 @@ export function PannaApp() {
           activePageId={state.activePageId}
           onProfile={onProfile} onPage={onPage}
           onAddProfile={onAddProfile} onAddPage={onAddPage}
-          onImportProfile={onImportProfile}
           theme={theme}
         />
 
@@ -537,12 +477,13 @@ export function PannaApp() {
             selectedSlot={selectedSlot}
             theme={theme}
             onSlotClick={onSlotClick}
-            activeDragId={activeDragId}
+            onDropAction={(idx, payload) => onDropAction(idx, { actionId: payload.actionId, name: payload.name, value: payload.value || '', iconOverride: payload.iconOverride })}
+            onReorder={onReorder}
           />
         </Glass>
 
         {/* Right: palette or inspector */}
-        <Glass theme={theme} radius={theme.radiusLg} style={{ width: 280, padding: 14, display: 'flex', flexDirection: 'column' }}>
+        <Glass theme={theme} radius={theme.radiusLg} style={{ width: 280, padding: 14, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {rightView === 'inspector' && selectedSlot != null ? (
             <Inspector
               slot={activePage.slots[selectedSlot]}
@@ -555,6 +496,7 @@ export function PannaApp() {
             />
           ) : (
             <>
+              <AutocompleteSettings theme={theme} />
               <ActionPalette theme={theme}
                 onTemplate={(t) => {
                   const total = activeProfile.rows * activeProfile.cols
@@ -564,39 +506,14 @@ export function PannaApp() {
                   onDropAction(next, { actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon })
                 }}
               />
-              <AutocompleteSettings theme={theme} />
             </>
           )}
         </Glass>
       </div>
-      <DragOverlay dropAnimation={null}>
-        {activeDragData?.type === 'tile' && activeDragId && (() => {
-          const fromIdx = parseInt((activeDragId as string).replace('tile-', ''), 10)
-          const slot = activePage.slots[fromIdx]
-          return slot ? (
-            <div style={{ width: 84, height: 84, opacity: 0.9, filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.35))' }}>
-              <Tile slot={slot} theme={theme} selected={false} onClick={() => {}} />
-            </div>
-          ) : null
-        })()}
-        {activeDragData?.type === 'action' && (
-          <div style={{
-            padding: '6px 12px', borderRadius: 8,
-            background: theme.dark ? 'rgba(30,30,36,0.95)' : 'rgba(255,255,255,0.95)',
-            border: `0.5px solid ${theme.borderStrong}`,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
-            fontSize: 12, fontFamily: theme.font, color: theme.text, fontWeight: 500,
-            whiteSpace: 'nowrap',
-          }}>
-            {activeDragData.name as string}
-          </div>
-        )}
-      </DragOverlay>
-      </DndContext>
 
       {/* Overlays */}
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} theme={theme} onAction={onCmd} />
-      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} lanUrl={lanUrl} />
+      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} url={lanUrl} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} theme={theme} />
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={onImportFileChange} />
     </div>

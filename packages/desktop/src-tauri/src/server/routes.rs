@@ -647,19 +647,20 @@ async fn autocomplete_sse_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.autocomplete.subscribe();
-    // Send current value immediately on connect
     let initial = rx.borrow().clone();
-    let initial_json = serde_json::to_string(&serde_json::json!({"words": initial}))
-        .unwrap_or_default();
+    let initial_json = serde_json::to_string(
+        &serde_json::json!({"words": initial.words, "partial": initial.partial})
+    ).unwrap_or_default();
 
     let stream = stream::unfold((rx, Some(initial_json)), |(mut rx, pending)| async move {
         if let Some(data) = pending {
             return Some((Ok(Event::default().data(data)), (rx, None)));
         }
         rx.changed().await.ok()?;
-        let words = rx.borrow_and_update().clone();
-        let json = serde_json::to_string(&serde_json::json!({"words": words}))
-            .unwrap_or_default();
+        let update = rx.borrow_and_update().clone();
+        let json = serde_json::to_string(
+            &serde_json::json!({"words": update.words, "partial": update.partial})
+        ).unwrap_or_default();
         Some((Ok(Event::default().data(json)), (rx, None)))
     });
 
