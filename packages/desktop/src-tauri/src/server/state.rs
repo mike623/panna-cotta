@@ -488,6 +488,7 @@ pub async fn save_stream_deck_config(
     let result = write_json_atomic(&profile_json_path(state, &active), config).await;
     if result.is_ok() {
         tracing::info!(profile = %active, "config saved");
+        let _ = state.config_version.send_modify(|v| *v += 1);
     }
     result
 }
@@ -1275,5 +1276,17 @@ action = "Calculator"
         let state = AppState::new();
         let rx = state.config_version.subscribe();
         assert_eq!(*rx.borrow(), 0u64);
+    }
+
+    #[tokio::test]
+    async fn save_config_bumps_version() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut rx = state.config_version.subscribe();
+        let before = *rx.borrow();
+        let cfg = default_config();
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        assert!(rx.has_changed().unwrap(), "version must have changed");
+        assert_eq!(*rx.borrow_and_update(), before + 1);
     }
 }
