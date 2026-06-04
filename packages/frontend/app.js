@@ -197,6 +197,19 @@ function startHealthPing() {
   scheduleHealthPing(HEALTH_PING_INTERVAL);
 }
 
+let wakeLock = null;
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+  } catch (_) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') acquireWakeLock();
+});
+
 function renderSuggestionStrip() {
   const strip = document.getElementById("suggestion-strip");
   if (!strip) return;
@@ -556,6 +569,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderView();
   startHealthPing();
   startAutocompleteSSE();
+  acquireWakeLock();
 
   if (typeof window.__TAURI__ !== "undefined") {
     const closeBtn = document.getElementById("tauri-close");
