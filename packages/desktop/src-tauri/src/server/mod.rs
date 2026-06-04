@@ -1,3 +1,4 @@
+pub mod mdns;
 pub mod routes;
 pub mod state;
 
@@ -65,6 +66,8 @@ pub async fn start(state: Arc<AppState>) -> Result<u16, String> {
         .map_err(|e| e.to_string())?;
 
     *state.port.lock().map_err(|e| e.to_string())? = Some(port);
+
+    mdns::advertise(port);
 
     // E2E test hook: when PANNA_CONFIG_DIR is set, write the CSRF token to a
     // file inside the override dir so test harnesses can authenticate.

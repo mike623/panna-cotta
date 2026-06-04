@@ -126,25 +126,58 @@ fn serve_file(path: &str) -> Response {
 async fn qr_page(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let port = state.port.lock().unwrap().unwrap_or(30000);
     let ip = local_ip();
-    let app_url = format!("http://{ip}:{port}/apps/");
+    let ip_url = format!("http://{ip}:{port}/apps/");
     let qr_url = format!(
-        "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={}",
-        urlencoding::encode(&app_url)
+        "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={}",
+        urlencoding::encode(&ip_url)
     );
+
+    let mdns_block = match local_hostname() {
+        Some(host) => {
+            let local_url = format!("http://{host}.local:{port}/apps/");
+            format!(r#"<div class="primary">
+<p class="label">Type this in your phone's browser:</p>
+<a class="local-url" href="{local_url}">{local_url}</a>
+</div>"#)
+        }
+        None => String::new(),
+    };
+
     let html = format!(r#"<!DOCTYPE html><html lang="en"><head>
-<meta charset="UTF-8"><title>Panna Cotta — Setup</title>
-<style>body{{font-family:system-ui;display:flex;flex-direction:column;align-items:center;
-justify-content:center;min-height:100vh;margin:0;background:#111;color:#eee}}
-.card{{background:#1a1a2e;padding:2rem;border-radius:1rem;text-align:center;max-width:400px}}
-h1{{margin:0 0 .5rem}}p{{color:#aaa}}img{{margin:1.5rem 0;border-radius:.5rem}}
-code{{background:#2a2a3e;padding:.25rem .5rem;border-radius:.25rem}}
-a{{color:#818cf8}}</style></head><body>
-<div class="card"><h1>Panna Cotta</h1>
-<p>Scan to open on your phone:</p>
-<img src="{qr_url}" width="200" height="200" alt="QR">
-<p>Or open: <a href="{app_url}"><code>{app_url}</code></a></p>
-<p style="margin-top:1.5rem;border-top:1px solid #2a2a3e;padding-top:1rem">
-<a href="/admin">&#9881; Admin</a></p></div></body></html>"#);
+<meta charset="UTF-8"><title>Panna Cotta — Connect</title>
+<style>
+*{{box-sizing:border-box}}
+body{{font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;
+align-items:center;justify-content:center;min-height:100vh;margin:0;background:#111;color:#eee}}
+.card{{background:#1c1c24;padding:2rem;border-radius:1rem;text-align:center;max-width:420px;width:100%;margin:1rem}}
+h1{{margin:0 0 .25rem;font-size:1.4rem}}
+.subtitle{{color:#888;margin:0 0 1.5rem;font-size:.9rem}}
+.primary{{background:#1e2a1e;border:1px solid #2d4a2d;border-radius:.75rem;padding:1.25rem;margin-bottom:1.5rem}}
+.label{{color:#888;font-size:.8rem;margin:0 0 .5rem;text-transform:uppercase;letter-spacing:.05em}}
+.local-url{{display:block;color:#6ee87a;font-size:1.05rem;font-weight:600;word-break:break-all;
+text-decoration:none;padding:.5rem;background:#0d1f0d;border-radius:.5rem}}
+.local-url:hover{{text-decoration:underline}}
+.divider{{color:#555;font-size:.8rem;margin:0 0 1rem}}
+.fallback{{opacity:.8}}
+.fallback p{{color:#888;font-size:.85rem;margin:.5rem 0}}
+img{{border-radius:.5rem;margin:.75rem 0}}
+.ip-url{{color:#818cf8;font-size:.85rem;word-break:break-all}}
+.admin-link{{margin-top:1.5rem;border-top:1px solid #2a2a3e;padding-top:1rem}}
+.admin-link a{{color:#555;font-size:.8rem;text-decoration:none}}
+.admin-link a:hover{{color:#888}}
+</style></head><body>
+<div class="card">
+<h1>Panna Cotta</h1>
+<p class="subtitle">Stream Deck for your phone</p>
+{mdns_block}
+<div class="divider">&#8212; or scan QR if .local doesn't work &#8212;</div>
+<div class="fallback">
+<img src="{qr_url}" width="180" height="180" alt="QR code">
+<p><a class="ip-url" href="{ip_url}">{ip_url}</a></p>
+<p style="font-size:.75rem;color:#555">QR fallback for networks that block mDNS</p>
+</div>
+<div class="admin-link"><a href="/admin">&#9881; Admin</a></div>
+</div></body></html>"#);
     axum::response::Html(html)
 }
 
@@ -154,6 +187,28 @@ fn local_ip() -> String {
         .and_then(|s| { s.connect("8.8.8.8:80")?; s.local_addr() })
         .map(|a| a.ip().to_string())
         .unwrap_or_else(|_| "localhost".to_string())
+}
+
+fn local_hostname() -> Option<String> {
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+        if rc == 0 {
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            if let Ok(s) = std::str::from_utf8(&buf[..end]) {
+                let base = s.split('.').next().unwrap_or(s).to_lowercase();
+                let sanitized: String = base
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                    .collect();
+                return Some(sanitized);
+            }
+        }
+    }
+    std::env::var("COMPUTERNAME")
+        .ok()
+        .map(|h| h.to_lowercase())
 }
 
 // ── Config handlers ───────────────────────────────────────────────────
