@@ -6,11 +6,7 @@ test.describe('auto-save: debounced save_config', () => {
     await mockedPage.goto('/')
     await expect(mockedPage.locator('text=Panna Cotta').first()).toBeVisible()
 
-    // After load, ignore the initial save and clear the call log
-    await mockedPage.waitForFunction(() => {
-      const calls = (window as any).__pannaCalls as Array<{ cmd: string }> | undefined
-      return !!calls?.some(c => c.cmd === 'save_config')
-    }, { timeout: 3000 })
+    // No initial save fires on load (suppressed in PannaApp); clear any stray calls.
     await clearCalls(mockedPage)
 
     await mockedPage.locator('[data-testid="template-t-github"]').click()
@@ -32,11 +28,7 @@ test.describe('auto-save: debounced save_config', () => {
     await mockedPage.goto('/')
     await expect(mockedPage.locator('text=Panna Cotta').first()).toBeVisible()
 
-    // Clear initial saves
-    await mockedPage.waitForFunction(() => {
-      const calls = (window as any).__pannaCalls as Array<{ cmd: string }> | undefined
-      return !!calls?.some(c => c.cmd === 'save_config')
-    }, { timeout: 3000 })
+    // No initial save fires on load (suppressed in PannaApp); clear any stray calls.
     await clearCalls(mockedPage)
 
     // Open inspector for slot 1 and make 3 rapid edits to the label
