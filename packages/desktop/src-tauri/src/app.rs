@@ -91,10 +91,35 @@ pub fn run() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    tracing_subscriber::registry()
+    let registry = tracing_subscriber::registry()
         .with(filter)
-        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
-        .init();
+        .with(fmt::layer().with_writer(non_blocking).with_ansi(false));
+
+    #[cfg(debug_assertions)]
+    let registry = registry.with(fmt::layer().with_writer(std::io::stderr).with_ansi(true));
+
+    registry.init();
+
+    // ── Crash handlers ───────────────────────────────────────────────────────
+    // Log Rust panics before they propagate.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(panic = %info, "PANIC");
+    }));
+
+    // SIGABRT handler: CGEventTap + WKWebView conflict on macOS delivers SIGABRT.
+    // Writes to stderr (async-signal-safe) so it appears in `tauri dev` output.
+    #[cfg(target_os = "macos")]
+    unsafe {
+        extern "C" fn sigabrt_handler(sig: libc::c_int) {
+            const MSG: &[u8] = b"[CRASH] SIGABRT - likely CGEventTap + WKWebView conflict. Check keyboard tap / autocomplete.\n";
+            unsafe {
+                libc::write(libc::STDERR_FILENO, MSG.as_ptr().cast(), MSG.len());
+                libc::signal(sig, libc::SIG_DFL);
+                libc::raise(sig);
+            }
+        }
+        libc::signal(libc::SIGABRT, sigabrt_handler as *const () as libc::sighandler_t);
+    }
 
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "app starting");
 
@@ -188,18 +213,13 @@ pub fn run() {
             }
 
             tauri::async_runtime::spawn(async move {
-                // Load persisted autocomplete config and start monitor if enabled
+                // Load persisted autocomplete config; create single app-lifetime CGEventTap.
                 {
                     let ac_config = crate::commands::autocomplete::load_config_raw(&state).await;
                     *state.autocomplete.config.lock().unwrap() = ac_config.clone();
                     state.autocomplete.reset_to_fallback();
-                    if ac_config.enabled {
-                        #[cfg(target_os = "macos")]
-                        {
-                            state.autocomplete.monitor_running.store(true, std::sync::atomic::Ordering::SeqCst);
-                            crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
-                        }
-                    }
+                    #[cfg(target_os = "macos")]
+                    crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
                 }
 
                 match crate::server::start(state.clone()).await {
@@ -227,9 +247,26 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                tauri::WindowEvent::Focused(focused) => {
+                    tracing::debug!(focused, "admin window focus changed");
+                    if let Some(state) = window.try_state::<std::sync::Arc<crate::server::state::AppState>>() {
+                        state.autocomplete.admin_focused.store(*focused, std::sync::atomic::Ordering::Relaxed);
+                        #[cfg(target_os = "macos")]
+                        if *focused {
+                            // Pause the tap while WKWebView is active — prevents
+                            // CGEventTap + WKWebView SIGABRT on macOS Sequoia.
+                            crate::autocomplete::tap::disable_tap(&state.autocomplete);
+                        } else if state.autocomplete.is_enabled() {
+                            crate::autocomplete::tap::enable_tap(&state.autocomplete);
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

@@ -52,9 +52,9 @@ pub async fn set_autocomplete_enabled(
         #[cfg(target_os = "macos")]
         {
             use std::sync::atomic::Ordering;
-            if state.autocomplete.monitor_running.compare_exchange(
-                false, true, Ordering::SeqCst, Ordering::SeqCst
-            ).is_ok() {
+            // Tap creation may have failed at startup (Accessibility permission denied).
+            // Retry now that the user has explicitly enabled autocomplete.
+            if state.autocomplete.tap_port.load(Ordering::SeqCst) == 0 {
                 crate::autocomplete::tap::start_monitor(state.autocomplete.clone());
             }
         }

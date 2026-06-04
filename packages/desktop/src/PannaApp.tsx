@@ -483,7 +483,7 @@ export function PannaApp() {
         </Glass>
 
         {/* Right: palette or inspector */}
-        <Glass theme={theme} radius={theme.radiusLg} style={{ width: 280, padding: 14, display: 'flex', flexDirection: 'column' }}>
+        <Glass theme={theme} radius={theme.radiusLg} style={{ width: 280, padding: 14, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {rightView === 'inspector' && selectedSlot != null ? (
             <Inspector
               slot={activePage.slots[selectedSlot]}
@@ -496,6 +496,7 @@ export function PannaApp() {
             />
           ) : (
             <>
+              <AutocompleteSettings theme={theme} />
               <ActionPalette theme={theme}
                 onTemplate={(t) => {
                   const total = activeProfile.rows * activeProfile.cols
@@ -505,7 +506,6 @@ export function PannaApp() {
                   onDropAction(next, { actionId: t.actionId, name: t.name, value: t.value, iconOverride: t.icon })
                 }}
               />
-              <AutocompleteSettings theme={theme} />
             </>
           )}
         </Glass>

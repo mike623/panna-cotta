@@ -2,21 +2,17 @@ import { test, expect } from '../fixtures/fixtures'
 import { getCallsFor } from '../fixtures/tauriMock'
 
 async function dndDrag(page: import('@playwright/test').Page, fromSel: string, toSel: string) {
-  const from = page.locator(fromSel)
-  const to = page.locator(toSel)
-  const fb = await from.boundingBox()
-  const tb = await to.boundingBox()
-  if (!fb || !tb) throw new Error('drag targets not visible')
-  const fx = fb.x + fb.width / 2
-  const fy = fb.y + fb.height / 2
-  const tx = tb.x + tb.width / 2
-  const ty = tb.y + tb.height / 2
-  await page.mouse.move(fx, fy)
-  await page.mouse.down()
-  await page.mouse.move(fx + 12, fy + 12, { steps: 4 })
-  await page.mouse.move(tx, ty, { steps: 10 })
-  await page.waitForTimeout(50)
-  await page.mouse.up()
+  await page.evaluate(({ from, to }: { from: string; to: string }) => {
+    const src = document.querySelector(from)
+    const dst = document.querySelector(to)
+    if (!src || !dst) throw new Error(`drag targets not found: ${from} -> ${to}`)
+    const dt = new DataTransfer()
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    dst.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    dst.dispatchEvent(new DragEvent('dragover',  { bubbles: true, cancelable: true, dataTransfer: dt }))
+    dst.dispatchEvent(new DragEvent('drop',      { bubbles: true, cancelable: true, dataTransfer: dt }))
+    src.dispatchEvent(new DragEvent('dragend',   { bubbles: true, cancelable: true, dataTransfer: dt }))
+  }, { from: fromSel, to: toSel })
 }
 
 test.describe('drag-and-drop: add action from palette', () => {

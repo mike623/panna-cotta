@@ -106,6 +106,7 @@ let connectionLost = false;
 let viewMode = localStorage.getItem("viewMode") || "grid";
 let pluginRender = { images: {}, titles: {}, states: {} };
 let autocompleteWords = [];
+let autocompletePartial = '';
 let autocompleteSource = null;
 
 const HEALTH_PING_INTERVAL = 5000;
@@ -200,6 +201,8 @@ function renderSuggestionStrip() {
   const strip = document.getElementById("suggestion-strip");
   if (!strip) return;
   strip.innerHTML = "";
+  if (autocompleteWords.length === 0) { strip.classList.add("hidden"); return; }
+  strip.classList.remove("hidden");
   autocompleteWords.forEach((word) => {
     const chip = document.createElement("button");
     chip.className = "suggestion-chip";
@@ -217,10 +220,11 @@ function renderSuggestionStrip() {
       }, 500);
     }, { passive: true });
 
-    chip.addEventListener("touchend", () => {
+    chip.addEventListener("touchend", (e) => {
       clearTimeout(longPressTimer);
       chip.classList.remove("long-pressed");
       if (!didLongPress) {
+        e.preventDefault(); // suppress synthetic click so action fires exactly once
         handleChipAction(word, "type");
       }
     });
@@ -241,10 +245,19 @@ function renderSuggestionStrip() {
 
 async function handleChipAction(word, action) {
   try {
+    // For "type": send only the suffix after the already-typed partial.
+    // e.g. partial="goo", word="good" → type "d" not "good".
+    let text = word;
+    if (action === 'type' && autocompletePartial) {
+      const p = autocompletePartial.toLowerCase();
+      if (word.toLowerCase().startsWith(p)) {
+        text = word.slice(autocompletePartial.length);
+      }
+    }
     await fetch(`${api.baseUrl}/api/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, text: word }),
+      body: JSON.stringify({ action, text }),
     });
   } catch (err) {
     console.error("chip action failed:", err);
@@ -260,6 +273,7 @@ function startAutocompleteSSE() {
       const data = JSON.parse(e.data);
       if (Array.isArray(data.words)) {
         autocompleteWords = data.words;
+        autocompletePartial = typeof data.partial === 'string' ? data.partial : '';
         renderSuggestionStrip();
       }
     } catch (_) {}

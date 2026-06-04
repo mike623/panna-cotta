@@ -63,7 +63,7 @@ export function AutocompleteSettings({ theme }: Props) {
     : (theme.dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)')
 
   return (
-    <div style={{ padding: '12px 0' }}>
+    <div style={{ padding: '12px 0', flexShrink: 0 }}>
       <div style={{
         fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
         textTransform: 'uppercase', color: theme.textFaint, marginBottom: 8,

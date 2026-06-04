@@ -6,7 +6,8 @@ import { ACTION_LIBRARY, QUICK_TEMPLATES, findAction } from './data'
 import type { SlotData } from './data'
 import type { QuickTemplate, ActionDef, ActionCategory } from './data'
 import type { Theme } from './theme'
-import { listInstalledApps } from './lib/invoke'
+import { listInstalledApps, listPlugins } from './lib/invoke'
+import type { PluginInfo } from './lib/types'
 
 function fieldStyle(theme: Theme): React.CSSProperties {
   return {
@@ -39,6 +40,11 @@ function btnStyle(theme: Theme, variant: 'primary' | 'ghost' | 'danger'): React.
 
 export function ActionPalette({ theme, onTemplate }: { theme: Theme, onTemplate: (t: QuickTemplate) => void }) {
   const [query, setQuery] = useState('')
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
+
+  useEffect(() => {
+    listPlugins().then(setPlugins).catch(() => {})
+  }, [])
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -51,7 +57,7 @@ export function ActionPalette({ theme, onTemplate }: { theme: Theme, onTemplate:
   }, [query])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 10, fontFamily: theme.font }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 10, fontFamily: theme.font }}>
       {/* Search */}
       <div style={{ position: 'relative' }}>
         <Icon name="search" size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.textFaint } as React.CSSProperties} />
@@ -60,7 +66,6 @@ export function ActionPalette({ theme, onTemplate }: { theme: Theme, onTemplate:
             background: theme.dark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.6)',
             border: `0.5px solid ${theme.borderStrong}`, borderRadius: 9,
             color: theme.text, fontSize: 12, outline: 'none', fontFamily: theme.font }} />
-        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9.5, color: theme.textFaint, padding: '2px 5px', borderRadius: 4, background: theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }}>⌘K</span>
       </div>
 
       {/* Quick add */}
@@ -104,6 +109,29 @@ export function ActionPalette({ theme, onTemplate }: { theme: Theme, onTemplate:
                   onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}>
                   <div style={{ width: 22, height: 22, borderRadius: 6, background: `color-mix(in oklch, ${cat.color} 18%, transparent)`, color: cat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name={a.icon} size={13} strokeWidth={1.8} />
+                  </div>
+                  <span style={{ flex: 1 }}>{a.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        {plugins.filter(p => p.actions && p.actions.length > 0).map(p => (
+          <div key={p.uuid} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: theme.textFaint, padding: '4px 4px 5px' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.accent }} />
+              {p.name}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {p.actions.map(a => (
+                <div key={a.uuid} draggable
+                  data-testid={`action-${a.uuid}`}
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('application/x-panna', JSON.stringify({ type: 'action', actionId: a.uuid, name: a.name, value: '' })) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 7px', borderRadius: 7, cursor: 'grab', color: theme.text, fontSize: 12, transition: 'background .12s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: `color-mix(in oklch, ${theme.accent} 18%, transparent)`, color: theme.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="spark" size={13} strokeWidth={1.8} />
                   </div>
                   <span style={{ flex: 1 }}>{a.name}</span>
                 </div>
@@ -166,7 +194,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
           <div data-testid="inspector-header" style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: theme.textFaint }}>Slot {slotIdx + 1}</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, marginTop: 1 }}>{slot ? local.label || '(no label)' : 'Empty slot'}</div>
         </div>
-        <button onClick={onClose} style={{ all: 'unset' as const, cursor: 'pointer', padding: 6, borderRadius: 6, color: theme.textFaint }}
+        <button data-testid="inspector-close" onClick={onClose} style={{ all: 'unset' as const, cursor: 'pointer', padding: 6, borderRadius: 6, color: theme.textFaint }}
           onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = theme.dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
           onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'transparent'}>
           <Icon name="x" size={14} />
@@ -178,7 +206,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
         {/* Type */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: theme.textFaint }}>Type</span>
-          <select value={local.actionId} onChange={e => apply({ actionId: e.target.value })} style={fieldStyle(theme) as React.CSSProperties}>
+          <select data-testid="inspector-type" value={local.actionId} onChange={e => apply({ actionId: e.target.value })} style={fieldStyle(theme) as React.CSSProperties}>
             {ACTION_LIBRARY.map(cat => (
               <optgroup key={cat.category} label={cat.category}>
                 {cat.actions.map((a: ActionDef) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -190,7 +218,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
         {/* Label */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: theme.textFaint }}>Label</span>
-          <input value={local.label} onChange={e => apply({ label: e.target.value })}
+          <input data-testid="inspector-label" value={local.label} onChange={e => apply({ label: e.target.value })}
             placeholder="GitHub" style={fieldStyle(theme) as React.CSSProperties} />
         </label>
 
@@ -199,14 +227,14 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
           <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: theme.textFaint }}>Action value</span>
           {local.actionId === 'open-app' && installedApps && installedApps.length > 0 ? (
             <>
-              <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+              <input data-testid="inspector-value" value={local.value || ''} onChange={e => apply({ value: e.target.value })}
                 placeholder={action?.hint || ''} list="installed-apps-list" autoComplete="off" style={fieldStyle(theme) as React.CSSProperties} />
               <datalist id="installed-apps-list">
                 {installedApps.map(a => <option key={a} value={a} />)}
               </datalist>
             </>
           ) : (
-            <input value={local.value || ''} onChange={e => apply({ value: e.target.value })}
+            <input data-testid="inspector-value" value={local.value || ''} onChange={e => apply({ value: e.target.value })}
               placeholder={action?.hint || ''} style={fieldStyle(theme) as React.CSSProperties} />
           )}
           {action?.hint && <span style={{ fontSize: 10, color: theme.textFaint }}>{action.hint}</span>}
@@ -215,7 +243,7 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
         {/* Icon override */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: theme.textFaint }}>Icon (name)</span>
-          <input value={local.iconOverride || ''} onChange={e => apply({ iconOverride: e.target.value })}
+          <input data-testid="inspector-icon" value={local.iconOverride || ''} onChange={e => apply({ iconOverride: e.target.value })}
             placeholder={action?.icon || 'spark'} style={fieldStyle(theme) as React.CSSProperties} />
         </label>
 
@@ -241,11 +269,11 @@ export function Inspector({ slot, slotIdx, theme, onChange, onClear, onClose, on
 
       {/* Footer actions */}
       <div style={{ display: 'flex', gap: 6, paddingTop: 10, borderTop: `0.5px solid ${theme.border}` }}>
-        <button onClick={onDuplicate} style={btnStyle(theme, 'ghost')}>
+        <button data-testid="inspector-duplicate" onClick={onDuplicate} style={btnStyle(theme, 'ghost')}>
           <Icon name="copy" size={12} /> Duplicate
         </button>
         <div style={{ flex: 1 }} />
-        <button onClick={onClear} style={btnStyle(theme, 'danger')}>
+        <button data-testid="inspector-clear" onClick={onClear} style={btnStyle(theme, 'danger')}>
           <Icon name="trash" size={12} /> Clear
         </button>
       </div>

@@ -162,6 +162,8 @@ export function DeviceCanvas({ profile, page, selectedSlot, theme, onSlotClick, 
           const isSwap = isHover && dragKind === 'tile' && dragFrom !== null && dragFrom !== idx && !!slot
           return (
             <div key={idx}
+              data-testid={`slot-${idx}`}
+              data-filled={slot ? 'true' : 'false'}
               onDragOver={e => { e.preventDefault(); setHoverIdx(idx); setDragOver(true) }}
               onDragLeave={() => { setHoverIdx(null); setDragOver(false) }}
               onDrop={e => {
