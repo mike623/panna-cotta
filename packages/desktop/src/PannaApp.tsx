@@ -130,8 +130,11 @@ export function PannaApp() {
 
   // ── Auto-save active profile to Tauri (debounced) ─────────────────────────
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasLoadedOnce = useRef(false)
   useEffect(() => {
     if (loading) return
+    // Skip the first fire after initial load — we just read this from disk.
+    if (!hasLoadedOnce.current) { hasLoadedOnce.current = true; return }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
       try {
