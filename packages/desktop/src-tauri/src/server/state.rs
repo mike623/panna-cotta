@@ -404,7 +404,7 @@ pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String
     let mut host = state.plugin_host.lock().await;
     host.fire_profile_lifecycle(new_config).await;
     drop(host);
-    let _ = state.config_version.send_modify(|v| *v += 1);
+    state.config_version.send_modify(|v| *v += 1);
     tracing::info!(profile = %safe, "profile activated");
     Ok(())
 }
@@ -489,7 +489,7 @@ pub async fn save_stream_deck_config(
     let result = write_json_atomic(&profile_json_path(state, &active), config).await;
     if result.is_ok() {
         tracing::info!(profile = %active, "config saved");
-        let _ = state.config_version.send_modify(|v| *v += 1);
+        state.config_version.send_modify(|v| *v += 1);
     }
     result
 }
@@ -1295,7 +1295,7 @@ action = "Calculator"
     async fn activate_profile_bumps_version() {
         let (state, _dir) = temp_state();
         create_profile(&state, "Work", None).await.unwrap();
-        let mut rx = state.config_version.subscribe();
+        let rx = state.config_version.subscribe();
         activate_profile(&state, "Work").await.unwrap();
         assert!(rx.has_changed().unwrap(), "version must have changed after activate");
     }
