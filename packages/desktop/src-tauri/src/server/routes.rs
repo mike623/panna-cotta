@@ -93,6 +93,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins/:uuid/status", get(plugin_status_handler))
         .route("/api/plugin-render", get(get_plugin_render_handler))
         .route("/api/autocomplete", get(autocomplete_sse_handler))
+        .route("/api/config/events", get(config_events_sse_handler))
         .route("/pi/:uuid/*path", get(serve_pi_file))
         .merge(admin)
         .with_state(state)
@@ -722,6 +723,21 @@ async fn autocomplete_sse_handler(
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
+async fn config_events_sse_handler(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.config_version.subscribe();
+
+    let stream = stream::unfold(rx, |mut rx| async move {
+        rx.changed().await.ok()?;
+        let v = *rx.borrow_and_update();
+        let data = serde_json::json!({"v": v}).to_string();
+        Some((Ok(Event::default().data(data)), rx))
+    });
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -838,7 +854,7 @@ mod tests {
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
         ));
-        let (config_version_tx2, _) = tokio::sync::watch::channel(0u64);
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
         Arc::new(AppState {
             config_dir: dir_path,
             port: std::sync::Mutex::new(None),
@@ -849,7 +865,7 @@ mod tests {
             autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
                 crate::autocomplete::state::AutocompleteConfig::default(),
             )),
-            config_version: std::sync::Arc::new(config_version_tx2),
+            config_version: std::sync::Arc::new(config_version_tx),
         })
     }
 
@@ -1692,6 +1708,24 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_ne!(resp.status(), StatusCode::BAD_REQUEST, "clipboard action shape should be accepted");
+    }
+
+    #[tokio::test]
+    async fn config_events_returns_sse() {
+        let state = make_state("tok");
+        let app = create_router(state);
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/config/events")
+            .extension(axum::extract::ConnectInfo(lan_addr()))
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").and_then(|v| v.to_str().ok()),
+            Some("text/event-stream")
+        );
     }
 
     #[tokio::test]
