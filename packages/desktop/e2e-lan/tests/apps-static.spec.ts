@@ -8,7 +8,7 @@ test('GET /apps/ returns the embedded index.html', async ({ request }) => {
   const ct = res.headers()['content-type'] ?? ''
   expect(ct).toMatch(/text\/html/)
   const body = await res.text()
-  expect(body).toContain('<title>Stream Deck</title>')
+  expect(body).toContain('<title>Panna Cotta</title>')
   expect(body).toContain('id="grid-container"')
 })
 
