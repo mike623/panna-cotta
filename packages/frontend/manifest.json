@@ -37,8 +37,15 @@
   "screenshots": [
     {
       "src": "/apps/assets/screenshot.png",
-      "sizes": "1280x720",
-      "type": "image/png"
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/apps/assets/screenshot-list.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ],
   "categories": [
