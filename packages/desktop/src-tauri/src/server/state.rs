@@ -135,6 +135,7 @@ pub struct AppState {
     pub plugin_render: Arc<Mutex<PluginRenderState>>,
     pub app_handle: Mutex<Option<tauri::AppHandle>>,
     pub autocomplete: Arc<crate::autocomplete::state::AutocompleteState>,
+    pub config_version: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 /// Resolve the on-disk config directory.
@@ -172,6 +173,8 @@ impl AppState {
         ));
         let autocomplete_config = crate::autocomplete::state::AutocompleteConfig::default();
         let autocomplete = Arc::new(crate::autocomplete::state::AutocompleteState::new(autocomplete_config));
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
+        let config_version = Arc::new(config_version_tx);
         Self {
             config_dir,
             port: Mutex::new(None),
@@ -180,6 +183,7 @@ impl AppState {
             plugin_render,
             app_handle: Mutex::new(None),
             autocomplete,
+            config_version,
         }
     }
 
@@ -527,6 +531,7 @@ mod tests {
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
         ));
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
             port: std::sync::Mutex::new(None),
@@ -537,6 +542,7 @@ mod tests {
             autocomplete: Arc::new(crate::autocomplete::state::AutocompleteState::new(
                 crate::autocomplete::state::AutocompleteConfig::default(),
             )),
+            config_version: Arc::new(config_version_tx),
         };
         (state, dir)
     }
@@ -1262,5 +1268,12 @@ action = "Calculator"
             state.config_dir.file_name().and_then(|s| s.to_str()),
             Some(".panna-cotta")
         );
+    }
+
+    #[tokio::test]
+    async fn config_version_starts_at_zero() {
+        let state = AppState::new();
+        let rx = state.config_version.subscribe();
+        assert_eq!(*rx.borrow(), 0u64);
     }
 }

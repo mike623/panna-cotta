@@ -741,6 +741,7 @@ mod tests {
                 Arc::clone(&plugin_render),
             ),
         ));
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
         Arc::new(AppState {
             config_dir: PathBuf::from("/tmp/test-panna"),
             port: Mutex::new(None),
@@ -751,6 +752,7 @@ mod tests {
             autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
                 crate::autocomplete::state::AutocompleteConfig::default(),
             )),
+            config_version: std::sync::Arc::new(config_version_tx),
         })
     }
 
@@ -836,6 +838,7 @@ mod tests {
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(config, Arc::clone(&plugin_render)),
         ));
+        let (config_version_tx2, _) = tokio::sync::watch::channel(0u64);
         Arc::new(AppState {
             config_dir: dir_path,
             port: std::sync::Mutex::new(None),
@@ -846,6 +849,7 @@ mod tests {
             autocomplete: std::sync::Arc::new(crate::autocomplete::state::AutocompleteState::new(
                 crate::autocomplete::state::AutocompleteConfig::default(),
             )),
+            config_version: std::sync::Arc::new(config_version_tx2),
         })
     }
 
