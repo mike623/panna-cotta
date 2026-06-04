@@ -277,6 +277,26 @@ async function handleChipAction(word, action) {
   }
 }
 
+let configEventsSource = null;
+
+function startConfigEvents() {
+  if (configEventsSource) configEventsSource.close();
+  configEventsSource = new EventSource(`${api.baseUrl}/api/config/events`);
+
+  configEventsSource.onmessage = async () => {
+    try {
+      config = await api.getConfig();
+      renderView();
+    } catch (_) {}
+  };
+
+  configEventsSource.onerror = () => {
+    configEventsSource.close();
+    configEventsSource = null;
+    setTimeout(startConfigEvents, 3000);
+  };
+}
+
 function startAutocompleteSSE() {
   if (autocompleteSource) autocompleteSource.close();
   autocompleteSource = new EventSource(`${api.baseUrl}/api/autocomplete`);
@@ -568,6 +588,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderPanelHeader();
   renderView();
   startHealthPing();
+  startConfigEvents();
   startAutocompleteSSE();
   acquireWakeLock();
 
