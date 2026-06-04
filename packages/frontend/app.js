@@ -286,6 +286,7 @@ function startConfigEvents() {
   configEventsSource.onmessage = async () => {
     try {
       config = await api.getConfig();
+      await fetchPluginRender();
       renderView();
     } catch (_) {}
   };
