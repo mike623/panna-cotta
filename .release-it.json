@@ -12,6 +12,6 @@
     "publish": false
   },
   "hooks": {
-    "after:bump": "node scripts/sync-versions.mjs ${version} && git add packages/desktop/src-tauri/tauri.conf.json packages/backend/services/version.ts"
+    "after:bump": "node scripts/sync-versions.mjs ${version} && git add package.json packages/desktop/package.json packages/desktop/src-tauri/Cargo.toml packages/desktop/src-tauri/tauri.conf.json"
   }
 }

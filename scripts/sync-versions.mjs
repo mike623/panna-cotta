@@ -11,19 +11,37 @@ if (!version) {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+const rootPackagePath = resolve(root, "package.json");
+const rootPackage = readFileSync(rootPackagePath, "utf8").replace(
+  /^(\s*"version"\s*:\s*)"[^"]+"/m,
+  `$1"${version}"`,
+);
+writeFileSync(rootPackagePath, rootPackage);
+console.log(`package.json → ${version}`);
+
+const desktopPackagePath = resolve(root, "packages/desktop/package.json");
+const desktopPackage = readFileSync(desktopPackagePath, "utf8").replace(
+  /^(\s*"version"\s*:\s*)"[^"]+"/m,
+  `$1"${version}"`,
+);
+writeFileSync(desktopPackagePath, desktopPackage);
+console.log(`packages/desktop/package.json → ${version}`);
+
+const cargoTomlPath = resolve(root, "packages/desktop/src-tauri/Cargo.toml");
+const cargoToml = readFileSync(cargoTomlPath, "utf8").replace(
+  /(^\[package\][\s\S]*?^version\s*=\s*)"[^"]+"/m,
+  `$1"${version}"`,
+);
+writeFileSync(cargoTomlPath, cargoToml);
+console.log(`Cargo.toml → ${version}`);
+
 const tauriConfPath = resolve(
   root,
   "packages/desktop/src-tauri/tauri.conf.json",
 );
-const conf = JSON.parse(readFileSync(tauriConfPath, "utf8"));
-conf.version = version;
-writeFileSync(tauriConfPath, JSON.stringify(conf, null, 2) + "\n");
-console.log(`tauri.conf.json → ${version}`);
-
-const versionTsPath = resolve(root, "packages/backend/services/version.ts");
-const ts = readFileSync(versionTsPath, "utf8").replace(
-  /CURRENT_VERSION = ".*"/,
-  `CURRENT_VERSION = "${version}"`,
+const tauriConf = readFileSync(tauriConfPath, "utf8").replace(
+  /^(\s*"version"\s*:\s*)"[^"]+"/m,
+  `$1"${version}"`,
 );
-writeFileSync(versionTsPath, ts);
-console.log(`version.ts → ${version}`);
+writeFileSync(tauriConfPath, tauriConf);
+console.log(`tauri.conf.json → ${version}`);
