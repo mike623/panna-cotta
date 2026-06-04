@@ -162,6 +162,7 @@ jobs:
     name: smoke (linux)
     runs-on: ubuntu-latest
     needs: [rust, vitest]
+    if: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
