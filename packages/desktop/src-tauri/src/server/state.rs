@@ -135,6 +135,7 @@ pub struct AppState {
     pub plugin_render: Arc<Mutex<PluginRenderState>>,
     pub app_handle: Mutex<Option<tauri::AppHandle>>,
     pub autocomplete: Arc<crate::autocomplete::state::AutocompleteState>,
+    pub config_version: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 /// Resolve the on-disk config directory.
@@ -172,6 +173,8 @@ impl AppState {
         ));
         let autocomplete_config = crate::autocomplete::state::AutocompleteConfig::default();
         let autocomplete = Arc::new(crate::autocomplete::state::AutocompleteState::new(autocomplete_config));
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
+        let config_version = Arc::new(config_version_tx);
         Self {
             config_dir,
             port: Mutex::new(None),
@@ -180,6 +183,7 @@ impl AppState {
             plugin_render,
             app_handle: Mutex::new(None),
             autocomplete,
+            config_version,
         }
     }
 
@@ -400,6 +404,7 @@ pub async fn activate_profile(state: &AppState, name: &str) -> Result<(), String
     let mut host = state.plugin_host.lock().await;
     host.fire_profile_lifecycle(new_config).await;
     drop(host);
+    state.config_version.send_modify(|v| *v += 1);
     tracing::info!(profile = %safe, "profile activated");
     Ok(())
 }
@@ -484,6 +489,7 @@ pub async fn save_stream_deck_config(
     let result = write_json_atomic(&profile_json_path(state, &active), config).await;
     if result.is_ok() {
         tracing::info!(profile = %active, "config saved");
+        state.config_version.send_modify(|v| *v += 1);
     }
     result
 }
@@ -527,6 +533,7 @@ mod tests {
         let plugin_host = Arc::new(tokio::sync::Mutex::new(
             crate::plugin::PluginHost::new(default_config(), Arc::clone(&plugin_render)),
         ));
+        let (config_version_tx, _) = tokio::sync::watch::channel(0u64);
         let state = AppState {
             config_dir: dir.path().to_path_buf(),
             port: std::sync::Mutex::new(None),
@@ -537,6 +544,7 @@ mod tests {
             autocomplete: Arc::new(crate::autocomplete::state::AutocompleteState::new(
                 crate::autocomplete::state::AutocompleteConfig::default(),
             )),
+            config_version: Arc::new(config_version_tx),
         };
         (state, dir)
     }
@@ -1262,5 +1270,33 @@ action = "Calculator"
             state.config_dir.file_name().and_then(|s| s.to_str()),
             Some(".panna-cotta")
         );
+    }
+
+    #[tokio::test]
+    async fn config_version_starts_at_zero() {
+        let state = AppState::new();
+        let rx = state.config_version.subscribe();
+        assert_eq!(*rx.borrow(), 0u64);
+    }
+
+    #[tokio::test]
+    async fn save_config_bumps_version() {
+        let (state, _dir) = temp_state();
+        migrate_old_config(&state).await.unwrap();
+        let mut rx = state.config_version.subscribe();
+        let before = *rx.borrow();
+        let cfg = default_config();
+        save_stream_deck_config(&state, &cfg).await.unwrap();
+        assert!(rx.has_changed().unwrap(), "version must have changed");
+        assert_eq!(*rx.borrow_and_update(), before + 1);
+    }
+
+    #[tokio::test]
+    async fn activate_profile_bumps_version() {
+        let (state, _dir) = temp_state();
+        create_profile(&state, "Work", None).await.unwrap();
+        let rx = state.config_version.subscribe();
+        activate_profile(&state, "Work").await.unwrap();
+        assert!(rx.has_changed().unwrap(), "version must have changed after activate");
     }
 }
