@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
 [Features](#features) • [Quick start](#quick-start) •
-[Development](#development) • [Building](#building)
+[Homebrew](#homebrew) • [Development](#development) • [Building](#building)
 
 </div>
 
@@ -67,6 +67,31 @@ panel.
 > [!TIP]
 > Your panel URL is also shown in the tray menu — share it or type it manually
 > if QR scanning isn't convenient.
+
+## Homebrew
+
+Panna Cotta can also be installed with Homebrew from the project tap:
+
+```sh
+brew tap mike623/tap
+brew install --cask mike623/tap/panna-cotta
+```
+
+To update an existing Homebrew install:
+
+```sh
+brew update
+brew upgrade --cask panna-cotta
+```
+
+To remove the app installed by Homebrew:
+
+```sh
+brew uninstall --cask panna-cotta
+```
+
+Release automation updates `mike623/homebrew-tap` after each tagged `v*`
+release finishes publishing the macOS Apple Silicon and Intel `.dmg` assets.
 
 ## Development
 
