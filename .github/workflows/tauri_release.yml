@@ -32,6 +32,7 @@ jobs:
 
       - name: Get version
         id: get_version
+        shell: bash
         run: |
           VERSION=$(node -p "require('./packages/desktop/src-tauri/tauri.conf.json').version")
           TAG="v$VERSION"
