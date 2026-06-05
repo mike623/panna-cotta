@@ -47,6 +47,14 @@ fn local_hostname() -> String {
 }
 
 fn raw_hostname() -> Option<String> {
+    // Prefer the macOS Bonjour name so the advertised `.local` record matches
+    // what the OS already resolves; `gethostname()` may be a cloud/DHCP FQDN.
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(name) = macos_local_hostname() {
+            return Some(name);
+        }
+    }
     #[cfg(unix)]
     {
         let mut buf = [0u8; 256];
@@ -61,6 +69,24 @@ fn raw_hostname() -> Option<String> {
         }
     }
     std::env::var("COMPUTERNAME").ok()
+}
+
+/// The macOS Bonjour name (`scutil --get LocalHostName`), e.g. `"mikes-Mac-mini"`.
+#[cfg(target_os = "macos")]
+fn macos_local_hostname() -> Option<String> {
+    let out = std::process::Command::new("scutil")
+        .args(["--get", "LocalHostName"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Determine the outbound LAN IP without sending packets.

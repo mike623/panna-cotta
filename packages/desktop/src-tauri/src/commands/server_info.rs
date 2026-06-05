@@ -28,6 +28,16 @@ fn local_ip() -> String {
 /// Sanitized short hostname (no domain, no `.local`), matching the value the
 /// mDNS responder advertises. None when the OS hostname can't be read.
 fn local_hostname() -> Option<String> {
+    // On macOS the Bonjour name (`scutil --get LocalHostName`) is what the OS
+    // actually resolves over mDNS — `gethostname()` can return an unrelated
+    // FQDN (e.g. a cloud/DHCP-assigned `ip-x-x-x-x.compute.internal`) that has
+    // no `.local` A-record. Prefer the Bonjour name.
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(name) = macos_local_hostname().and_then(|s| sanitize_hostname(&s)) {
+            return Some(name);
+        }
+    }
     #[cfg(unix)]
     {
         let mut buf = [0u8; 256];
@@ -42,6 +52,25 @@ fn local_hostname() -> Option<String> {
         }
     }
     std::env::var("COMPUTERNAME").ok().and_then(|s| sanitize_hostname(&s))
+}
+
+/// The macOS Bonjour name (`LocalHostName`), e.g. `"mikes-Mac-mini"`, which the
+/// system mDNS responder advertises as `<name>.local`. None if unreadable.
+#[cfg(target_os = "macos")]
+fn macos_local_hostname() -> Option<String> {
+    let out = std::process::Command::new("scutil")
+        .args(["--get", "LocalHostName"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn sanitize_hostname(raw: &str) -> Option<String> {

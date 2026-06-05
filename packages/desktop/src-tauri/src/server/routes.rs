@@ -190,7 +190,33 @@ fn local_ip() -> String {
         .unwrap_or_else(|_| "localhost".to_string())
 }
 
+fn sanitize_hostname(raw: &str) -> String {
+    let base = raw.split('.').next().unwrap_or(raw).to_lowercase();
+    base.chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .collect()
+}
+
 fn local_hostname() -> Option<String> {
+    // Prefer the macOS Bonjour name — `gethostname()` may return a cloud/DHCP
+    // FQDN with no resolvable `.local` record. See server/mdns.rs.
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("scutil")
+            .args(["--get", "LocalHostName"])
+            .output()
+            .ok();
+        if let Some(out) = out {
+            if out.status.success() {
+                if let Ok(name) = String::from_utf8(out.stdout) {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return Some(sanitize_hostname(name));
+                    }
+                }
+            }
+        }
+    }
     #[cfg(unix)]
     {
         let mut buf = [0u8; 256];
@@ -198,18 +224,13 @@ fn local_hostname() -> Option<String> {
         if rc == 0 {
             let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
             if let Ok(s) = std::str::from_utf8(&buf[..end]) {
-                let base = s.split('.').next().unwrap_or(s).to_lowercase();
-                let sanitized: String = base
-                    .chars()
-                    .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
-                    .collect();
-                return Some(sanitized);
+                return Some(sanitize_hostname(s));
             }
         }
     }
     std::env::var("COMPUTERNAME")
         .ok()
-        .map(|h| h.to_lowercase())
+        .map(|h| sanitize_hostname(&h))
 }
 
 // ── Config handlers ───────────────────────────────────────────────────
