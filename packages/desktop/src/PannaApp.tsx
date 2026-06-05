@@ -16,6 +16,7 @@ import { AutocompleteSettings } from './AutocompleteSettings'
 interface ServerInfo {
   ip: string
   port: number
+  hostname?: string | null
 }
 
 // ── App state history type ───────────────────────────────────────────────────
@@ -72,6 +73,7 @@ export function PannaApp() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [lanUrl, setLanUrl] = useState<string>('')
+  const [localUrl, setLocalUrl] = useState<string>('')
   const [serverPort, setServerPort] = useState<number | undefined>()
   const [launchAtLogin, setLaunchAtLogin] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('')
@@ -96,6 +98,9 @@ export function PannaApp() {
 
         if (serverInfo) {
           setLanUrl(`http://${serverInfo.ip}:${serverInfo.port}/apps/`)
+          setLocalUrl(serverInfo.hostname
+            ? `http://${serverInfo.hostname}.local:${serverInfo.port}/apps/`
+            : '')
           setServerPort(serverInfo.port)
         }
         setLaunchAtLogin(autostart)
@@ -516,7 +521,7 @@ export function PannaApp() {
 
       {/* Overlays */}
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} theme={theme} onAction={onCmd} />
-      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} url={lanUrl} />
+      <ConnectPopover open={connectOpen} onClose={() => setConnectOpen(false)} theme={theme} url={localUrl} lanUrl={lanUrl} />
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} theme={theme} />
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={onImportFileChange} />
     </div>

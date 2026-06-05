@@ -461,18 +461,28 @@ export function ConnectPopover({ open, onClose, theme, url, lanUrl }: {
   url?: string, lanUrl?: string
 }) {
   if (!open) return null
-  const displayUrl = url || lanUrl || ''
+  // `url` is the mDNS `.local` address (survives DHCP changes); `lanUrl` is the
+  // raw IP. Show `.local` as the primary text, but encode the IP in the QR — it
+  // resolves even on networks that block mDNS, matching the web setup page.
+  const localUrl = url || ''
+  const qrUrl = lanUrl || localUrl
+  const primaryUrl = localUrl || lanUrl || ''
   return (
     <div onMouseDown={onClose} style={{ position: 'absolute', inset: 0, zIndex: 40, background: 'rgba(0,0,0,0.2)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onMouseDown={e => e.stopPropagation()} style={{ width: 320, padding: 22, background: theme.dark ? 'rgba(29,31,36,0.94)' : 'rgba(246,241,232,0.95)', backdropFilter: 'blur(40px) saturate(180%)', border: `0.5px solid ${theme.borderStrong}`, borderRadius: 16, boxShadow: '0 30px 80px rgba(0,0,0,0.4)', fontFamily: theme.font, color: theme.text, textAlign: 'center' }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Connect a device</div>
-        <div style={{ fontSize: 11.5, color: theme.textMute, marginBottom: 16 }}>Scan to open the panel on your phone or tablet.</div>
-        {displayUrl && (
+        <div style={{ fontSize: 11.5, color: theme.textMute, marginBottom: 16 }}>Type the address below, or scan to open the panel on your phone or tablet.</div>
+        {localUrl && (
+          <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 600, color: theme.text, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>{localUrl}</div>
+        )}
+        {qrUrl && (
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-            <QRCodeSVG value={displayUrl} size={180} bgColor="white" fgColor="black" style={{ borderRadius: 10, padding: 10, background: 'white' }} />
+            <QRCodeSVG value={qrUrl} size={180} bgColor="white" fgColor="black" style={{ borderRadius: 10, padding: 10, background: 'white' }} />
           </div>
         )}
-        <div style={{ marginBottom: 14, fontSize: 11, color: theme.textMute, fontFamily: 'ui-monospace, monospace' }}>{displayUrl}</div>
+        <div style={{ marginBottom: 14, fontSize: 11, color: theme.textMute, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>
+          {localUrl ? `Scan for IP fallback: ${qrUrl}` : primaryUrl}
+        </div>
         <button onClick={onClose} style={{ all: 'unset', cursor: 'pointer', padding: '7px 14px', borderRadius: 8, background: theme.accent, color: 'white', fontSize: 12, fontWeight: 600 }}>Done</button>
       </div>
     </div>
