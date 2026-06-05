@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1](https://github.com/mike623/panna-cotta/compare/v0.2.0...v0.2.1) (2026-06-05)
+
+### Bug Fixes
+
+* **mdns:** use macOS Bonjour LocalHostName for .local URL ([4a5f6af](https://github.com/mike623/panna-cotta/commit/4a5f6afbf7bb9472122b6673fa0829486f079d62))
+
 ## [0.2.0](https://github.com/mike623/panna-cotta/compare/v0.1.17...v0.2.0) (2026-06-05)
 
 ### Features
