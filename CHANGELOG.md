@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.17](https://github.com/mike623/panna-cotta/compare/v0.1.15...v0.1.17) (2026-06-05)
+
 All notable changes to Panna Cotta are documented here.
 
 ## [0.2.0.1] - 2026-05-11

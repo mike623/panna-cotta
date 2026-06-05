@@ -1,6 +1,6 @@
 {
   "name": "panna-cotta-desktop",
-  "version": "0.1.15",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "scripts": {
