@@ -1,11 +1,12 @@
 {
   "name": "panna-cotta",
-  "version": "0.1.5",
+  "version": "0.1.16",
   "private": true,
   "scripts": {
     "release": "release-it"
   },
   "devDependencies": {
-    "release-it": "^17"
+    "@release-it/conventional-changelog": "^11.0.1",
+    "release-it": "^19.2.4"
   }
 }

@@ -30,17 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version and create tag
+      - name: Get version
         id: get_version
         run: |
           VERSION=$(node -p "require('./packages/desktop/src-tauri/tauri.conf.json').version")
           TAG="v$VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG" || echo "Tag $TAG already exists, skipping"
-          git push origin "$TAG" || echo "Tag $TAG already pushed"
 
       - uses: actions/setup-node@v4
         with:
