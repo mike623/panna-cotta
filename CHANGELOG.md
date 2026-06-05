@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0](https://github.com/mike623/panna-cotta/compare/v0.1.17...v0.2.0) (2026-06-05)
+
+### Features
+
+* **admin:** show mDNS .local URL in connect popup ([e72e9b8](https://github.com/mike623/panna-cotta/commit/e72e9b8b022b2d2a52c0a63993278762218f4865))
+
+### Bug Fixes
+
+* **ci:** force bash shell on Get version step ([bfe737f](https://github.com/mike623/panna-cotta/commit/bfe737f9c2bc198fafb8995e121427e96d586ef9))
+
 ## [0.1.17](https://github.com/mike623/panna-cotta/compare/v0.1.15...v0.1.17) (2026-06-05)
 
 All notable changes to Panna Cotta are documented here.
